@@ -31,7 +31,6 @@ type Config struct {
 	Model     string
 	Usage     bool
 	Citations bool
-	Glow      bool
 	Verbose   bool
 }
 

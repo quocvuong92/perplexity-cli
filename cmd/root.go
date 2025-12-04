@@ -23,7 +23,9 @@ var rootCmd = &cobra.Command{
 	Short: "A CLI client for the Perplexity API",
 	Long: `Perplexity CLI is a simple and convenient command-line client
 for the Perplexity API, allowing users to quickly ask questions
-and receive answers directly from the terminal.`,
+and receive answers directly from the terminal.
+
+Output is in markdown format for easy copying.`,
 	Args: cobra.ExactArgs(1),
 	Run:  run,
 }
@@ -34,7 +36,6 @@ func init() {
 	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug mode")
 	rootCmd.Flags().BoolVarP(&cfg.Usage, "usage", "u", false, "Show token usage statistics")
 	rootCmd.Flags().BoolVarP(&cfg.Citations, "citations", "c", false, "Show citations")
-	rootCmd.Flags().BoolVarP(&cfg.Glow, "glow", "g", false, "Use Glow-compatible formatting")
 	rootCmd.Flags().StringVarP(&cfg.APIKey, "api-key", "a", "", "API key (defaults to PERPLEXITY_API_KEY env var)")
 	rootCmd.Flags().StringVarP(&cfg.Model, "model", "m", config.DefaultModel,
 		fmt.Sprintf("Model to use. Available: %s", config.GetAvailableModelsString()))
@@ -66,15 +67,15 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	display.ShowContent(resp.GetContent())
+
 	if cfg.Citations && len(resp.Citations) > 0 {
-		display.ShowCitations(resp.Citations, cfg.Glow)
+		display.ShowCitations(resp.Citations)
 	}
 
 	if cfg.Usage {
-		display.ShowUsage(resp.GetUsageMap(), cfg.Glow)
+		display.ShowUsage(resp.GetUsageMap())
 	}
-
-	display.ShowContent(resp.GetContent(), cfg.Glow)
 }
 
 // Execute runs the root command
