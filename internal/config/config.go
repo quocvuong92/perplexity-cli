@@ -31,6 +31,7 @@ type Config struct {
 	Model     string
 	Usage     bool
 	Citations bool
+	Stream    bool
 	Verbose   bool
 }
 
