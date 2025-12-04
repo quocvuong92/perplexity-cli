@@ -8,9 +8,10 @@ Perplexity CLI is a simple and convenient command-line client for the Perplexity
 
 - Easy querying of the Perplexity API
 - Support for various language models
+- Real-time streaming output (SSE)
 - Optional display of token usage statistics
 - Optional display of citations
-- Colorful output formatting (with glow support)
+- Markdown output format for easy copying
 - API key handling from environment variable or command-line argument
 - Cross-platform support (macOS, Linux, Windows)
 
@@ -24,8 +25,8 @@ Perplexity CLI is a simple and convenient command-line client for the Perplexity
 ### From Source
 
 ```bash
-git clone https://github.com/quocvuong92/perplexity-api.git
-cd perplexity-api
+git clone https://github.com/quocvuong92/perplexity-cli.git
+cd perplexity-cli
 make install
 ```
 
@@ -53,22 +54,28 @@ Add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) for persistence.
 perplexity "What is the meaning of life?"
 ```
 
+### With Streaming (Real-time Output)
+
+```bash
+perplexity -s "Explain quantum computing"
+```
+
 ### With Additional Options
 
 ```bash
-perplexity -uc -m sonar-pro "Explain Einstein's theory of relativity"
+perplexity -scu "Explain Einstein's theory of relativity"
 ```
 
 ## Options
 
 | Flag | Description |
 |------|-------------|
-| `-v, --verbose` | Enable debug mode |
+| `-s, --stream` | Stream output in real-time |
 | `-u, --usage` | Show token usage statistics |
 | `-c, --citations` | Show citations |
-| `-g, --glow` | Use Glow-compatible formatting |
-| `-a, --api-key` | Set the API key (optional, defaults to `PERPLEXITY_API_KEY` env var) |
 | `-m, --model` | Choose the language model (default: sonar-pro) |
+| `-a, --api-key` | Set the API key (defaults to `PERPLEXITY_API_KEY` env var) |
+| `-v, --verbose` | Enable debug mode |
 
 ## Available Models
 
@@ -96,7 +103,3 @@ make clean
 ## License
 
 This project is released under the MIT License.
-
-## Author
-
-Dawid Szewc (original Python version)
