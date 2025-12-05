@@ -12,6 +12,7 @@ Perplexity CLI is a simple and convenient command-line client for the Perplexity
 - Optional display of token usage statistics
 - Optional display of citations
 - Markdown output format for easy copying
+- Rendered markdown output with colors and formatting
 - API key handling from environment variable or command-line argument
 - Multiple API keys support with automatic rotation
 - Cross-platform support (macOS, Linux, Windows)
@@ -78,6 +79,7 @@ perplexity -scu "Explain Einstein's theory of relativity"
 | Flag | Description |
 |------|-------------|
 | `-s, --stream` | Stream output in real-time |
+| `-r, --render` | Render markdown with colors and formatting |
 | `-u, --usage` | Show token usage statistics |
 | `-c, --citations` | Show citations |
 | `-m, --model` | Choose the language model (default: sonar-pro) |
