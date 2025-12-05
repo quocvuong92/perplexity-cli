@@ -1,4 +1,4 @@
-module github.com/quocvuong92/perplexity-api
+module github.com/quocvuong92/perplexity-cli
 
 go 1.23.0
 

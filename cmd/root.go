@@ -9,9 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/quocvuong92/perplexity-api/internal/api"
-	"github.com/quocvuong92/perplexity-api/internal/config"
-	"github.com/quocvuong92/perplexity-api/internal/display"
+	"github.com/quocvuong92/perplexity-cli/internal/api"
+	"github.com/quocvuong92/perplexity-cli/internal/config"
+	"github.com/quocvuong92/perplexity-cli/internal/display"
 )
 
 var (
