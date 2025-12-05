@@ -4,7 +4,33 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+
+	"github.com/charmbracelet/glamour"
 )
+
+// renderer is the markdown renderer instance
+var (
+	renderer     *glamour.TermRenderer
+	rendererOnce sync.Once
+	rendererErr  error
+)
+
+// InitRenderer initializes the markdown renderer
+func InitRenderer() error {
+	rendererOnce.Do(func() {
+		r, err := glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithWordWrap(100),
+		)
+		if err != nil {
+			rendererErr = err
+			return
+		}
+		renderer = r
+	})
+	return rendererErr
+}
 
 // ShowUsage displays token usage statistics in markdown format
 func ShowUsage(usage map[string]int) {
@@ -31,6 +57,26 @@ func ShowCitations(citations []string) {
 // ShowContent displays the main content response
 func ShowContent(content string) {
 	fmt.Println(strings.TrimSpace(content))
+}
+
+// ShowContentRendered displays markdown content with terminal rendering
+func ShowContentRendered(content string) {
+	if renderer == nil {
+		ShowContent(content)
+		return
+	}
+	rendered, err := renderer.Render(content)
+	if err != nil {
+		ShowContent(content)
+		return
+	}
+	// glamour output already includes trailing newline, use Print to avoid double newline
+	fmt.Print(strings.TrimSuffix(rendered, "\n"))
+}
+
+// ShowStreamRenderWarning displays a warning when render is used with stream mode
+func ShowStreamRenderWarning() {
+	fmt.Fprintln(os.Stderr, "Note: --render with --stream buffers output until complete (no real-time streaming)")
 }
 
 // ShowError displays an error message

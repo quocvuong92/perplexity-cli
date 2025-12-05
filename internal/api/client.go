@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/quocvuong92/perplexity-api/internal/config"
+	"github.com/quocvuong92/perplexity-cli/internal/config"
 )
 
 // Message represents a chat message

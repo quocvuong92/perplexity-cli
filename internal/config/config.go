@@ -37,6 +37,7 @@ type Config struct {
 	Usage           bool
 	Citations       bool
 	Stream          bool
+	Render          bool // Render markdown output with colors/formatting
 	Verbose         bool
 }
 
