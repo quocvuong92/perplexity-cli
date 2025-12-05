@@ -24,6 +24,9 @@ type Spinner struct {
 	startTime time.Time
 	message   string
 	stopChan  chan struct{}
+	wg        sync.WaitGroup
+	stopped   bool
+	mu        sync.Mutex
 }
 
 // NewSpinner creates a new spinner with the given message
@@ -44,7 +47,9 @@ func (sp *Spinner) Start() {
 	sp.s.Start()
 
 	// Update elapsed time in background
+	sp.wg.Add(1)
 	go func() {
+		defer sp.wg.Done()
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -61,7 +66,16 @@ func (sp *Spinner) Start() {
 
 // Stop stops the spinner and clears the line
 func (sp *Spinner) Stop() {
+	sp.mu.Lock()
+	if sp.stopped {
+		sp.mu.Unlock()
+		return
+	}
+	sp.stopped = true
+	sp.mu.Unlock()
+
 	close(sp.stopChan)
+	sp.wg.Wait()
 	sp.s.Stop()
 }
 
