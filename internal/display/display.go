@@ -4,7 +4,25 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/charmbracelet/glamour"
 )
+
+// renderer is the markdown renderer instance
+var renderer *glamour.TermRenderer
+
+// InitRenderer initializes the markdown renderer
+func InitRenderer() error {
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(100),
+	)
+	if err != nil {
+		return err
+	}
+	renderer = r
+	return nil
+}
 
 // ShowUsage displays token usage statistics in markdown format
 func ShowUsage(usage map[string]int) {
@@ -31,6 +49,20 @@ func ShowCitations(citations []string) {
 // ShowContent displays the main content response
 func ShowContent(content string) {
 	fmt.Println(strings.TrimSpace(content))
+}
+
+// ShowContentRendered displays markdown content with terminal rendering
+func ShowContentRendered(content string) {
+	if renderer == nil {
+		ShowContent(content)
+		return
+	}
+	rendered, err := renderer.Render(content)
+	if err != nil {
+		ShowContent(content)
+		return
+	}
+	fmt.Print(rendered)
 }
 
 // ShowError displays an error message
