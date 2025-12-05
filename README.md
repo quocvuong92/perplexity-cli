@@ -86,6 +86,8 @@ perplexity -scu "Explain Einstein's theory of relativity"
 | `-a, --api-key` | Set the API key (defaults to `PERPLEXITY_API_KEYS` or `PERPLEXITY_API_KEY` env var) |
 | `-v, --verbose` | Enable debug mode |
 
+> **Note:** When using `--render` with `--stream`, output is buffered and rendered after the response completes (real-time streaming is disabled).
+
 ## Available Models
 
 - sonar-reasoning-pro

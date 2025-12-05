@@ -111,6 +111,11 @@ func runStream(client *api.Client, query string) {
 	var finalResp *api.ChatResponse
 	var fullContent strings.Builder
 
+	// Warn user that render mode disables real-time streaming
+	if cfg.Render {
+		display.ShowStreamRenderWarning()
+	}
+
 	err := client.QueryStream(query,
 		func(content string) {
 			if cfg.Render {
