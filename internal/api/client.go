@@ -188,7 +188,7 @@ func (c *Client) doQuery(message string) (*ChatResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -279,7 +279,7 @@ func (c *Client) doQueryStream(message string, onChunk func(content string), onD
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Only return APIError for HTTP status errors (before streaming starts)
 	// This allows key rotation only at this stage

@@ -5,7 +5,9 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/briandowns/spinner"
 	"github.com/charmbracelet/glamour"
 )
 
@@ -15,6 +17,67 @@ var (
 	rendererOnce sync.Once
 	rendererErr  error
 )
+
+// Spinner wraps the spinner with elapsed time display
+type Spinner struct {
+	s         *spinner.Spinner
+	startTime time.Time
+	message   string
+	stopChan  chan struct{}
+	wg        sync.WaitGroup
+	stopped   bool
+	mu        sync.Mutex
+}
+
+// NewSpinner creates a new spinner with the given message
+func NewSpinner(message string) *Spinner {
+	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
+	s.Suffix = fmt.Sprintf(" %s (0.0s)", message)
+	s.Writer = os.Stderr
+	return &Spinner{
+		s:        s,
+		message:  message,
+		stopChan: make(chan struct{}),
+	}
+}
+
+// Start begins the spinner animation
+func (sp *Spinner) Start() {
+	sp.startTime = time.Now()
+	sp.s.Start()
+
+	// Update elapsed time in background
+	sp.wg.Add(1)
+	go func() {
+		defer sp.wg.Done()
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-sp.stopChan:
+				return
+			case <-ticker.C:
+				elapsed := time.Since(sp.startTime).Seconds()
+				sp.s.Suffix = fmt.Sprintf(" %s (%.1fs)", sp.message, elapsed)
+			}
+		}
+	}()
+}
+
+// Stop stops the spinner and clears the line
+func (sp *Spinner) Stop() {
+	sp.mu.Lock()
+	if sp.stopped {
+		sp.mu.Unlock()
+		return
+	}
+	sp.stopped = true
+	sp.mu.Unlock()
+
+	close(sp.stopChan)
+	sp.wg.Wait()
+	sp.s.Stop()
+}
 
 // InitRenderer initializes the markdown renderer
 func InitRenderer() error {
@@ -72,11 +135,6 @@ func ShowContentRendered(content string) {
 	}
 	// glamour output already includes trailing newline, use Print to avoid double newline
 	fmt.Print(strings.TrimSuffix(rendered, "\n"))
-}
-
-// ShowStreamRenderWarning displays a warning when render is used with stream mode
-func ShowStreamRenderWarning() {
-	fmt.Fprintln(os.Stderr, "Note: --render with --stream buffers output until complete (no real-time streaming)")
 }
 
 // ShowError displays an error message

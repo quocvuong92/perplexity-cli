@@ -86,7 +86,12 @@ func run(cmd *cobra.Command, args []string) {
 }
 
 func runNormal(client *api.Client, query string) {
+	sp := display.NewSpinner("Waiting for response...")
+	sp.Start()
+
 	resp, err := client.Query(query)
+	sp.Stop()
+
 	if err != nil {
 		display.ShowError(err.Error())
 		os.Exit(1)
@@ -110,14 +115,20 @@ func runNormal(client *api.Client, query string) {
 func runStream(client *api.Client, query string) {
 	var finalResp *api.ChatResponse
 	var fullContent strings.Builder
+	firstChunk := true
 
-	// Warn user that render mode disables real-time streaming
-	if cfg.Render {
-		display.ShowStreamRenderWarning()
-	}
+	// Show spinner while waiting for first content
+	sp := display.NewSpinner("Waiting for response...")
+	sp.Start()
 
 	err := client.QueryStream(query,
 		func(content string) {
+			// Stop spinner on first chunk
+			if firstChunk {
+				sp.Stop()
+				firstChunk = false
+			}
+
 			if cfg.Render {
 				// Collect content for rendering at the end
 				fullContent.WriteString(content)
@@ -129,6 +140,11 @@ func runStream(client *api.Client, query string) {
 			finalResp = resp
 		},
 	)
+
+	// Stop spinner if still running (in case of early error)
+	if firstChunk {
+		sp.Stop()
+	}
 
 	if err != nil {
 		display.ShowError(err.Error())

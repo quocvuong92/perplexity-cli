@@ -38,7 +38,6 @@ type Config struct {
 	Citations       bool
 	Stream          bool
 	Render          bool // Render markdown output with colors/formatting
-	Verbose         bool
 }
 
 // ErrAPIKeyNotFound is returned when no API key is available
@@ -172,17 +171,4 @@ func (c *Config) RotateKey() (string, error) {
 // GetKeyCount returns the total number of configured keys
 func (c *Config) GetKeyCount() int {
 	return len(c.APIKeys)
-}
-
-// GetRemainingKeyCount returns the number of keys from current index onwards (including current key)
-func (c *Config) GetRemainingKeyCount() int {
-	return len(c.APIKeys) - c.CurrentKeyIndex
-}
-
-// MaskKey returns a masked version of the API key for display
-func MaskKey(key string) string {
-	if len(key) <= 8 {
-		return "****"
-	}
-	return key[:4] + "..." + key[len(key)-4:]
 }
