@@ -37,7 +37,7 @@ func init() {
 	rootCmd.Flags().BoolVarP(&cfg.Usage, "usage", "u", false, "Show token usage statistics")
 	rootCmd.Flags().BoolVarP(&cfg.Citations, "citations", "c", false, "Show citations")
 	rootCmd.Flags().BoolVarP(&cfg.Stream, "stream", "s", false, "Stream output in real-time")
-	rootCmd.Flags().StringVarP(&cfg.APIKey, "api-key", "a", "", "API key (defaults to PERPLEXITY_API_KEY env var)")
+	rootCmd.Flags().StringVarP(&cfg.APIKey, "api-key", "a", "", "API key (defaults to PERPLEXITY_API_KEYS or PERPLEXITY_API_KEY env var)")
 	rootCmd.Flags().StringVarP(&cfg.Model, "model", "m", config.DefaultModel,
 		fmt.Sprintf("Model to use. Available: %s", config.GetAvailableModelsString()))
 }
@@ -61,6 +61,12 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	client := api.NewClient(cfg)
+
+	// Set up key rotation callback to notify user
+	client.SetKeyRotationCallback(func(fromIndex, toIndex int, totalKeys int) {
+		display.ShowKeyRotation(fromIndex, toIndex, totalKeys)
+	})
+
 	log.Printf("Sending request to API...")
 
 	if cfg.Stream {

@@ -60,10 +60,21 @@ type ErrorResponse struct {
 	} `json:"error"`
 }
 
+// APIError represents an error with status code
+type APIError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *APIError) Error() string {
+	return e.Message
+}
+
 // Client is the Perplexity API client
 type Client struct {
-	httpClient *http.Client
-	config     *config.Config
+	httpClient    *http.Client
+	config        *config.Config
+	onKeyRotation func(fromIndex, toIndex int, totalKeys int) // Callback when key is rotated
 }
 
 // NewClient creates a new API client
@@ -76,8 +87,81 @@ func NewClient(cfg *config.Config) *Client {
 	}
 }
 
+// SetKeyRotationCallback sets a callback function to be called when key rotation occurs
+func (c *Client) SetKeyRotationCallback(callback func(fromIndex, toIndex int, totalKeys int)) {
+	c.onKeyRotation = callback
+}
+
+// shouldRotateKey checks if the error indicates we should try another key
+func (c *Client) shouldRotateKey(statusCode int, errorMsg string) bool {
+	// Check status codes that indicate key issues
+	for _, code := range config.RotatableErrorCodes {
+		if statusCode == code {
+			return true
+		}
+	}
+
+	// Check error message patterns
+	lowerMsg := strings.ToLower(errorMsg)
+	for _, pattern := range config.CreditExhaustedPatterns {
+		if strings.Contains(lowerMsg, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// rotateKey attempts to switch to the next available API key
+func (c *Client) rotateKey() error {
+	oldIndex := c.config.CurrentKeyIndex
+	_, err := c.config.RotateKey()
+	if err != nil {
+		return err
+	}
+
+	// Call the rotation callback if set
+	if c.onKeyRotation != nil {
+		c.onKeyRotation(oldIndex+1, c.config.CurrentKeyIndex+1, c.config.GetKeyCount())
+	}
+
+	return nil
+}
+
 // Query sends a query to the Perplexity API (non-streaming)
 func (c *Client) Query(message string) (*ChatResponse, error) {
+	return c.queryWithRetry(message)
+}
+
+// queryWithRetry performs the query with automatic key rotation on failure
+func (c *Client) queryWithRetry(message string) (*ChatResponse, error) {
+	maxRetries := c.config.GetRemainingKeyCount()
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		resp, err := c.doQuery(message)
+		if err == nil {
+			return resp, nil
+		}
+
+		// Check if we should rotate keys
+		apiErr, ok := err.(*APIError)
+		if !ok || !c.shouldRotateKey(apiErr.StatusCode, apiErr.Message) {
+			return nil, err
+		}
+
+		// Try to rotate to next key
+		lastErr = err
+		if rotateErr := c.rotateKey(); rotateErr != nil {
+			return nil, fmt.Errorf("%v (no more API keys available)", err)
+		}
+	}
+
+	return nil, fmt.Errorf("all API keys exhausted: %v", lastErr)
+}
+
+// doQuery performs a single query attempt
+func (c *Client) doQuery(message string) (*ChatResponse, error) {
 	reqBody := ChatRequest{
 		Model: c.config.Model,
 		Messages: []Message{
@@ -112,16 +196,16 @@ func (c *Client) Query(message string) (*ChatResponse, error) {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("invalid API key")
-	}
-
 	if resp.StatusCode != http.StatusOK {
 		var errResp ErrorResponse
+		errMsg := fmt.Sprintf("status code %d", resp.StatusCode)
 		if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.Message != "" {
-			return nil, fmt.Errorf("API error: %s", errResp.Error.Message)
+			errMsg = errResp.Error.Message
 		}
-		return nil, fmt.Errorf("API error: status code %d", resp.StatusCode)
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("API error: %s", errMsg),
+		}
 	}
 
 	var chatResp ChatResponse
@@ -134,6 +218,38 @@ func (c *Client) Query(message string) (*ChatResponse, error) {
 
 // QueryStream sends a streaming query to the Perplexity API
 func (c *Client) QueryStream(message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+	return c.queryStreamWithRetry(message, onChunk, onDone)
+}
+
+// queryStreamWithRetry performs the streaming query with automatic key rotation on failure
+func (c *Client) queryStreamWithRetry(message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+	maxRetries := c.config.GetRemainingKeyCount()
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		err := c.doQueryStream(message, onChunk, onDone)
+		if err == nil {
+			return nil
+		}
+
+		// Check if we should rotate keys
+		apiErr, ok := err.(*APIError)
+		if !ok || !c.shouldRotateKey(apiErr.StatusCode, apiErr.Message) {
+			return err
+		}
+
+		// Try to rotate to next key
+		lastErr = err
+		if rotateErr := c.rotateKey(); rotateErr != nil {
+			return fmt.Errorf("%v (no more API keys available)", err)
+		}
+	}
+
+	return fmt.Errorf("all API keys exhausted: %v", lastErr)
+}
+
+// doQueryStream performs a single streaming query attempt
+func (c *Client) doQueryStream(message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
 	reqBody := ChatRequest{
 		Model: c.config.Model,
 		Messages: []Message{
@@ -163,17 +279,17 @@ func (c *Client) QueryStream(message string, onChunk func(content string), onDon
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("invalid API key")
-	}
-
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		var errResp ErrorResponse
+		errMsg := fmt.Sprintf("status code %d", resp.StatusCode)
 		if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.Message != "" {
-			return fmt.Errorf("API error: %s", errResp.Error.Message)
+			errMsg = errResp.Error.Message
 		}
-		return fmt.Errorf("API error: status code %d", resp.StatusCode)
+		return &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("API error: %s", errMsg),
+		}
 	}
 
 	var finalResp *ChatResponse
