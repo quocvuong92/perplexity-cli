@@ -115,25 +115,21 @@ func runNormal(client *api.Client, query string) {
 func runStream(client *api.Client, query string) {
 	var finalResp *api.ChatResponse
 	var fullContent strings.Builder
-	var sp *display.Spinner
 	firstChunk := true
 
-	// For render mode, show spinner while waiting
-	if cfg.Render {
-		sp = display.NewSpinner("Waiting for response...")
-		sp.Start()
-	}
+	// Show spinner while waiting for first content
+	sp := display.NewSpinner("Waiting for response...")
+	sp.Start()
 
 	err := client.QueryStream(query,
 		func(content string) {
+			// Stop spinner on first chunk
+			if firstChunk {
+				sp.Stop()
+				firstChunk = false
+			}
+
 			if cfg.Render {
-				// Stop "waiting" spinner on first chunk, switch to "receiving"
-				if firstChunk {
-					sp.Stop()
-					sp = display.NewSpinner("Receiving response...")
-					sp.Start()
-					firstChunk = false
-				}
 				// Collect content for rendering at the end
 				fullContent.WriteString(content)
 			} else {
@@ -145,8 +141,8 @@ func runStream(client *api.Client, query string) {
 		},
 	)
 
-	// Stop spinner if still running
-	if sp != nil {
+	// Stop spinner if still running (in case of early error)
+	if firstChunk {
 		sp.Stop()
 	}
 

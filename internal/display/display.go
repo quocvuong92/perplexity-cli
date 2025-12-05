@@ -23,6 +23,7 @@ type Spinner struct {
 	s         *spinner.Spinner
 	startTime time.Time
 	message   string
+	stopChan  chan struct{}
 }
 
 // NewSpinner creates a new spinner with the given message
@@ -31,8 +32,9 @@ func NewSpinner(message string) *Spinner {
 	s.Suffix = fmt.Sprintf(" %s (0.0s)", message)
 	s.Writer = os.Stderr
 	return &Spinner{
-		s:       s,
-		message: message,
+		s:        s,
+		message:  message,
+		stopChan: make(chan struct{}),
 	}
 }
 
@@ -43,22 +45,24 @@ func (sp *Spinner) Start() {
 
 	// Update elapsed time in background
 	go func() {
-		for sp.s.Active() {
-			elapsed := time.Since(sp.startTime).Seconds()
-			sp.s.Suffix = fmt.Sprintf(" %s (%.1fs)", sp.message, elapsed)
-			time.Sleep(100 * time.Millisecond)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-sp.stopChan:
+				return
+			case <-ticker.C:
+				elapsed := time.Since(sp.startTime).Seconds()
+				sp.s.Suffix = fmt.Sprintf(" %s (%.1fs)", sp.message, elapsed)
+			}
 		}
 	}()
 }
 
 // Stop stops the spinner and clears the line
 func (sp *Spinner) Stop() {
+	close(sp.stopChan)
 	sp.s.Stop()
-}
-
-// UpdateMessage changes the spinner message
-func (sp *Spinner) UpdateMessage(message string) {
-	sp.message = message
 }
 
 // InitRenderer initializes the markdown renderer
