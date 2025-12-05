@@ -13,6 +13,7 @@ Perplexity CLI is a simple and convenient command-line client for the Perplexity
 - Optional display of citations
 - Markdown output format for easy copying
 - API key handling from environment variable or command-line argument
+- Multiple API keys support with automatic rotation
 - Cross-platform support (macOS, Linux, Windows)
 
 ## Requirements
@@ -43,10 +44,16 @@ cp perplexity /usr/local/bin/
 ### Set API Key
 
 ```bash
+# Single API key
 export PERPLEXITY_API_KEY="your-api-key"
+
+# Multiple API keys (comma-separated) - automatically rotates on failure
+export PERPLEXITY_API_KEYS="key1,key2,key3"
 ```
 
 Add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) for persistence.
+
+> **Note:** When using multiple keys via `PERPLEXITY_API_KEYS`, the CLI will automatically switch to the next key if the current one fails (e.g., due to rate limits or exhausted credits).
 
 ## Usage
 
@@ -74,7 +81,7 @@ perplexity -scu "Explain Einstein's theory of relativity"
 | `-u, --usage` | Show token usage statistics |
 | `-c, --citations` | Show citations |
 | `-m, --model` | Choose the language model (default: sonar-pro) |
-| `-a, --api-key` | Set the API key (defaults to `PERPLEXITY_API_KEY` env var) |
+| `-a, --api-key` | Set the API key (defaults to `PERPLEXITY_API_KEYS` or `PERPLEXITY_API_KEY` env var) |
 | `-v, --verbose` | Enable debug mode |
 
 ## Available Models

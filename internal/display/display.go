@@ -2,6 +2,7 @@ package display
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -35,4 +36,9 @@ func ShowContent(content string) {
 // ShowError displays an error message
 func ShowError(message string) {
 	fmt.Printf("Error: %s\n", message)
+}
+
+// ShowKeyRotation displays a message when API key is rotated
+func ShowKeyRotation(fromIndex, toIndex int, totalKeys int) {
+	fmt.Fprintf(os.Stderr, "Note: API key %d/%d failed, switching to key %d/%d\n", fromIndex, totalKeys, toIndex, totalKeys)
 }
