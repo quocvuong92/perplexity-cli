@@ -135,10 +135,12 @@ func (c *Client) Query(message string) (*ChatResponse, error) {
 
 // queryWithRetry performs the query with automatic key rotation on failure
 func (c *Client) queryWithRetry(message string) (*ChatResponse, error) {
-	maxRetries := c.config.GetRemainingKeyCount()
+	// If only one key, no retry needed
+	if c.config.GetKeyCount() <= 1 {
+		return c.doQuery(message)
+	}
 
-	var lastErr error
-	for attempt := 0; attempt < maxRetries; attempt++ {
+	for {
 		resp, err := c.doQuery(message)
 		if err == nil {
 			return resp, nil
@@ -151,13 +153,10 @@ func (c *Client) queryWithRetry(message string) (*ChatResponse, error) {
 		}
 
 		// Try to rotate to next key
-		lastErr = err
 		if rotateErr := c.rotateKey(); rotateErr != nil {
 			return nil, fmt.Errorf("%v (no more API keys available)", err)
 		}
 	}
-
-	return nil, fmt.Errorf("all API keys exhausted: %v", lastErr)
 }
 
 // doQuery performs a single query attempt
@@ -222,30 +221,33 @@ func (c *Client) QueryStream(message string, onChunk func(content string), onDon
 }
 
 // queryStreamWithRetry performs the streaming query with automatic key rotation on failure
+// Note: Key rotation only happens before streaming starts (on HTTP errors).
+// Once streaming begins successfully, mid-stream errors are not retried to avoid duplicate content.
 func (c *Client) queryStreamWithRetry(message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
-	maxRetries := c.config.GetRemainingKeyCount()
+	// If only one key, no retry needed
+	if c.config.GetKeyCount() <= 1 {
+		return c.doQueryStream(message, onChunk, onDone)
+	}
 
-	var lastErr error
-	for attempt := 0; attempt < maxRetries; attempt++ {
+	for {
 		err := c.doQueryStream(message, onChunk, onDone)
 		if err == nil {
 			return nil
 		}
 
 		// Check if we should rotate keys
+		// Only APIError (HTTP status errors) trigger rotation
+		// Mid-stream errors (io errors, parse errors) don't trigger rotation
 		apiErr, ok := err.(*APIError)
 		if !ok || !c.shouldRotateKey(apiErr.StatusCode, apiErr.Message) {
 			return err
 		}
 
 		// Try to rotate to next key
-		lastErr = err
 		if rotateErr := c.rotateKey(); rotateErr != nil {
 			return fmt.Errorf("%v (no more API keys available)", err)
 		}
 	}
-
-	return fmt.Errorf("all API keys exhausted: %v", lastErr)
 }
 
 // doQueryStream performs a single streaming query attempt
@@ -279,6 +281,8 @@ func (c *Client) doQueryStream(message string, onChunk func(content string), onD
 	}
 	defer resp.Body.Close()
 
+	// Only return APIError for HTTP status errors (before streaming starts)
+	// This allows key rotation only at this stage
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		var errResp ErrorResponse
@@ -292,6 +296,8 @@ func (c *Client) doQueryStream(message string, onChunk func(content string), onD
 		}
 	}
 
+	// Once we start reading the stream, don't retry on errors
+	// to avoid duplicate content being sent to onChunk
 	var finalResp *ChatResponse
 	reader := bufio.NewReader(resp.Body)
 
