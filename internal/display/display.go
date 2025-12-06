@@ -79,6 +79,18 @@ func (sp *Spinner) Stop() {
 	sp.s.Stop()
 }
 
+// UpdateMessage updates the spinner message while keeping it running
+func (sp *Spinner) UpdateMessage(message string) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	if sp.stopped {
+		return
+	}
+	sp.message = message
+	elapsed := time.Since(sp.startTime).Seconds()
+	sp.s.Suffix = fmt.Sprintf(" %s (%.1fs)", message, elapsed)
+}
+
 // InitRenderer initializes the markdown renderer
 func InitRenderer() error {
 	rendererOnce.Do(func() {
