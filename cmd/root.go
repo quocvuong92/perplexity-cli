@@ -123,10 +123,15 @@ func runStream(client *api.Client, query string) {
 
 	err := client.QueryStream(query,
 		func(content string) {
-			// Stop spinner on first chunk
 			if firstChunk {
-				sp.Stop()
 				firstChunk = false
+				if cfg.Render {
+					// Update spinner message - keep spinning while collecting content
+					sp.UpdateMessage("Receiving response...")
+				} else {
+					// Stop spinner for non-render streaming (show content immediately)
+					sp.Stop()
+				}
 			}
 
 			if cfg.Render {
@@ -141,10 +146,8 @@ func runStream(client *api.Client, query string) {
 		},
 	)
 
-	// Stop spinner if still running (in case of early error)
-	if firstChunk {
-		sp.Stop()
-	}
+	// Stop spinner (either still running in render mode, or already stopped)
+	sp.Stop()
 
 	if err != nil {
 		display.ShowError(err.Error())
