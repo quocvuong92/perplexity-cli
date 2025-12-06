@@ -1,4 +1,4 @@
-.PHONY: build build-darwin build-linux build-windows build-all clean install
+.PHONY: build build-compressed build-darwin build-linux build-windows build-all build-all-compressed clean test fmt lint
 
 BINARY_NAME=perplexity
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -7,6 +7,11 @@ BUILD_DIR=build
 # Build for current OS
 build:
 	go build -ldflags="-s -w" -o $(BINARY_NAME) .
+
+# Build and compress for current OS
+build-compressed: build
+	gzexe $(BINARY_NAME)
+	rm -f $(BINARY_NAME)~
 
 # Build for macOS (both architectures)
 build-darwin:
@@ -27,14 +32,18 @@ build-windows:
 # Build for all platforms
 build-all: build-darwin build-linux build-windows
 
+# Build and compress for all platforms (gzexe doesn't work on Windows)
+build-all-compressed: build-all
+	gzexe $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64
+	gzexe $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64
+	gzexe $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64
+	rm -f $(BUILD_DIR)/*~
+	@echo "Note: Windows binary not compressed (gzexe not supported)"
+
 # Clean build artifacts
 clean:
-	rm -f $(BINARY_NAME)
+	rm -f $(BINARY_NAME) $(BINARY_NAME)~
 	rm -rf $(BUILD_DIR)
-
-# Install locally
-install: build
-	cp $(BINARY_NAME) /usr/local/bin/$(BINARY_NAME)
 
 # Run tests
 test:
