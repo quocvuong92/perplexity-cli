@@ -18,6 +18,9 @@ var AvailableModels = []string{
 // DefaultModel is the default model to use
 const DefaultModel = "sonar-pro"
 
+// DefaultSystemMessage is the default system prompt
+const DefaultSystemMessage = "Be precise and concise."
+
 // DefaultAPIURL is the Perplexity API endpoint
 const DefaultAPIURL = "https://api.perplexity.ai/chat/completions"
 
