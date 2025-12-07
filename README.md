@@ -9,6 +9,7 @@ Perplexity CLI is a simple and convenient command-line client for the Perplexity
 - Easy querying of the Perplexity API
 - Support for various language models
 - Real-time streaming output (SSE)
+- Interactive chat mode with conversation history
 - Optional display of token usage statistics
 - Optional display of citations
 - Markdown output format for easy copying
@@ -80,6 +81,7 @@ perplexity -scu "Explain Einstein's theory of relativity"
 |------|-------------|
 | `-s, --stream` | Stream output in real-time |
 | `-r, --render` | Render markdown with colors and formatting |
+| `-i, --interactive` | Interactive chat mode with conversation history |
 | `-u, --usage` | Show token usage statistics |
 | `-c, --citations` | Show citations |
 | `-m, --model` | Choose the language model (default: sonar-pro) |
@@ -87,6 +89,55 @@ perplexity -scu "Explain Einstein's theory of relativity"
 | `-v, --verbose` | Enable debug mode |
 
 > **Note:** When using `--render` with `--stream`, output is buffered and rendered after the response completes (real-time streaming is disabled).
+
+## Interactive Mode
+
+Start an interactive chat session with conversation history:
+
+```bash
+perplexity -i
+perplexity --interactive
+
+# With streaming and rendering
+perplexity -isr
+
+# With citations
+perplexity -isc
+```
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/exit`, `/quit`, `/q` | Exit interactive mode |
+| `/clear`, `/c` | Clear conversation history |
+| `/model <name>` | Switch model |
+| `/model` | Show current model |
+| `/help`, `/h` | Show available commands |
+
+### Example Session
+
+```
+$ perplexity -isr
+Perplexity CLI - Interactive Mode
+Model: sonar-pro
+Type /help for commands, Ctrl+C to quit, Tab for autocomplete
+
+> What is Kubernetes?
+Kubernetes is an open-source container orchestration platform...
+
+> How does it compare to Docker Swarm?
+Building on what I explained about Kubernetes, here's how it compares...
+
+> /model sonar-reasoning-pro
+Switched to model: sonar-reasoning-pro
+
+> /clear
+Conversation cleared.
+
+> /exit
+Goodbye!
+```
 
 ## Available Models
 

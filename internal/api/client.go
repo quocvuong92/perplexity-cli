@@ -161,13 +161,109 @@ func (c *Client) queryWithRetry(message string) (*ChatResponse, error) {
 
 // doQuery performs a single query attempt
 func (c *Client) doQuery(message string) (*ChatResponse, error) {
+	messages := []Message{
+		{Role: "system", Content: config.DefaultSystemMessage},
+		{Role: "user", Content: message},
+	}
+	return c.doQueryWithHistory(messages)
+}
+
+// QueryStream sends a streaming query to the Perplexity API
+func (c *Client) QueryStream(message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+	return c.queryStreamWithRetry(message, onChunk, onDone)
+}
+
+// queryStreamWithRetry performs the streaming query with automatic key rotation on failure
+// Note: Key rotation only happens before streaming starts (on HTTP errors).
+// Once streaming begins successfully, mid-stream errors are not retried to avoid duplicate content.
+func (c *Client) queryStreamWithRetry(message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+	// If only one key, no retry needed
+	if c.config.GetKeyCount() <= 1 {
+		return c.doQueryStream(message, onChunk, onDone)
+	}
+
+	for {
+		err := c.doQueryStream(message, onChunk, onDone)
+		if err == nil {
+			return nil
+		}
+
+		// Check if we should rotate keys
+		// Only APIError (HTTP status errors) trigger rotation
+		// Mid-stream errors (io errors, parse errors) don't trigger rotation
+		apiErr, ok := err.(*APIError)
+		if !ok || !c.shouldRotateKey(apiErr.StatusCode, apiErr.Message) {
+			return err
+		}
+
+		// Try to rotate to next key
+		if rotateErr := c.rotateKey(); rotateErr != nil {
+			return fmt.Errorf("%v (no more API keys available)", err)
+		}
+	}
+}
+
+// doQueryStream performs a single streaming query attempt
+func (c *Client) doQueryStream(message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+	messages := []Message{
+		{Role: "system", Content: config.DefaultSystemMessage},
+		{Role: "user", Content: message},
+	}
+	return c.doQueryStreamWithHistory(messages, onChunk, onDone)
+}
+
+// GetContent extracts the content from the response
+func (r *ChatResponse) GetContent() string {
+	if len(r.Choices) > 0 {
+		if r.Choices[0].Message.Content != "" {
+			return r.Choices[0].Message.Content
+		}
+		return r.Choices[0].Delta.Content
+	}
+	return ""
+}
+
+// GetUsageMap returns usage as a map for display
+func (r *ChatResponse) GetUsageMap() map[string]int {
+	return map[string]int{
+		"prompt_tokens":     r.Usage.PromptTokens,
+		"completion_tokens": r.Usage.CompletionTokens,
+		"total_tokens":      r.Usage.TotalTokens,
+	}
+}
+
+// QueryWithHistory sends a query with message history (for interactive mode)
+func (c *Client) QueryWithHistory(messages []Message) (*ChatResponse, error) {
+	return c.queryWithHistoryRetry(messages)
+}
+
+func (c *Client) queryWithHistoryRetry(messages []Message) (*ChatResponse, error) {
+	if c.config.GetKeyCount() <= 1 {
+		return c.doQueryWithHistory(messages)
+	}
+
+	for {
+		resp, err := c.doQueryWithHistory(messages)
+		if err == nil {
+			return resp, nil
+		}
+
+		apiErr, ok := err.(*APIError)
+		if !ok || !c.shouldRotateKey(apiErr.StatusCode, apiErr.Message) {
+			return nil, err
+		}
+
+		if rotateErr := c.rotateKey(); rotateErr != nil {
+			return nil, fmt.Errorf("%v (no more API keys available)", err)
+		}
+	}
+}
+
+func (c *Client) doQueryWithHistory(messages []Message) (*ChatResponse, error) {
 	reqBody := ChatRequest{
-		Model: c.config.Model,
-		Messages: []Message{
-			{Role: "system", Content: "Be precise and concise."},
-			{Role: "user", Content: message},
-		},
-		Stream: false,
+		Model:    c.config.Model,
+		Messages: messages,
+		Stream:   false,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -215,50 +311,38 @@ func (c *Client) doQuery(message string) (*ChatResponse, error) {
 	return &chatResp, nil
 }
 
-// QueryStream sends a streaming query to the Perplexity API
-func (c *Client) QueryStream(message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
-	return c.queryStreamWithRetry(message, onChunk, onDone)
+// QueryStreamWithHistory sends a streaming query with message history (for interactive mode)
+func (c *Client) QueryStreamWithHistory(messages []Message, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+	return c.queryStreamWithHistoryRetry(messages, onChunk, onDone)
 }
 
-// queryStreamWithRetry performs the streaming query with automatic key rotation on failure
-// Note: Key rotation only happens before streaming starts (on HTTP errors).
-// Once streaming begins successfully, mid-stream errors are not retried to avoid duplicate content.
-func (c *Client) queryStreamWithRetry(message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
-	// If only one key, no retry needed
+func (c *Client) queryStreamWithHistoryRetry(messages []Message, onChunk func(content string), onDone func(resp *ChatResponse)) error {
 	if c.config.GetKeyCount() <= 1 {
-		return c.doQueryStream(message, onChunk, onDone)
+		return c.doQueryStreamWithHistory(messages, onChunk, onDone)
 	}
 
 	for {
-		err := c.doQueryStream(message, onChunk, onDone)
+		err := c.doQueryStreamWithHistory(messages, onChunk, onDone)
 		if err == nil {
 			return nil
 		}
 
-		// Check if we should rotate keys
-		// Only APIError (HTTP status errors) trigger rotation
-		// Mid-stream errors (io errors, parse errors) don't trigger rotation
 		apiErr, ok := err.(*APIError)
 		if !ok || !c.shouldRotateKey(apiErr.StatusCode, apiErr.Message) {
 			return err
 		}
 
-		// Try to rotate to next key
 		if rotateErr := c.rotateKey(); rotateErr != nil {
 			return fmt.Errorf("%v (no more API keys available)", err)
 		}
 	}
 }
 
-// doQueryStream performs a single streaming query attempt
-func (c *Client) doQueryStream(message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+func (c *Client) doQueryStreamWithHistory(messages []Message, onChunk func(content string), onDone func(resp *ChatResponse)) error {
 	reqBody := ChatRequest{
-		Model: c.config.Model,
-		Messages: []Message{
-			{Role: "system", Content: "Be precise and concise."},
-			{Role: "user", Content: message},
-		},
-		Stream: true,
+		Model:    c.config.Model,
+		Messages: messages,
+		Stream:   true,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -281,8 +365,6 @@ func (c *Client) doQueryStream(message string, onChunk func(content string), onD
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Only return APIError for HTTP status errors (before streaming starts)
-	// This allows key rotation only at this stage
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		var errResp ErrorResponse
@@ -296,8 +378,6 @@ func (c *Client) doQueryStream(message string, onChunk func(content string), onD
 		}
 	}
 
-	// Once we start reading the stream, don't retry on errors
-	// to avoid duplicate content being sent to onChunk
 	var finalResp *ChatResponse
 	reader := bufio.NewReader(resp.Body)
 
@@ -329,12 +409,10 @@ func (c *Client) doQueryStream(message string, onChunk func(content string), onD
 			continue
 		}
 
-		// Send content chunk
 		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 			onChunk(chunk.Choices[0].Delta.Content)
 		}
 
-		// Capture citations and usage from final chunk
 		if len(chunk.Citations) > 0 || chunk.Usage.TotalTokens > 0 {
 			finalResp = &chunk
 		}
@@ -345,24 +423,4 @@ func (c *Client) doQueryStream(message string, onChunk func(content string), onD
 	}
 
 	return nil
-}
-
-// GetContent extracts the content from the response
-func (r *ChatResponse) GetContent() string {
-	if len(r.Choices) > 0 {
-		if r.Choices[0].Message.Content != "" {
-			return r.Choices[0].Message.Content
-		}
-		return r.Choices[0].Delta.Content
-	}
-	return ""
-}
-
-// GetUsageMap returns usage as a map for display
-func (r *ChatResponse) GetUsageMap() map[string]int {
-	return map[string]int{
-		"prompt_tokens":     r.Usage.PromptTokens,
-		"completion_tokens": r.Usage.CompletionTokens,
-		"total_tokens":      r.Usage.TotalTokens,
-	}
 }

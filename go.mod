@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/briandowns/spinner v1.23.2
 	github.com/charmbracelet/glamour v0.10.0
+	github.com/chzyer/readline v1.5.1
 	github.com/spf13/cobra v1.8.1
 )
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/chzyer/readline"
 	"github.com/spf13/cobra"
 
 	"github.com/quocvuong92/perplexity-cli/internal/api"
@@ -19,6 +20,18 @@ var (
 	verbose bool
 )
 
+// Command items for autocomplete
+var commandItems = []readline.PrefixCompleterInterface{
+	readline.PcItem("/exit"),
+	readline.PcItem("/quit"),
+	readline.PcItem("/q"),
+	readline.PcItem("/clear"),
+	readline.PcItem("/c"),
+	readline.PcItem("/help"),
+	readline.PcItem("/h"),
+	readline.PcItem("/model"),
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "perplexity [query]",
 	Short: "A CLI client for the Perplexity API",
@@ -27,7 +40,7 @@ for the Perplexity API, allowing users to quickly ask questions
 and receive answers directly from the terminal.
 
 Output is in markdown format for easy copying.`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	Run:  run,
 }
 
@@ -39,6 +52,7 @@ func init() {
 	rootCmd.Flags().BoolVarP(&cfg.Citations, "citations", "c", false, "Show citations")
 	rootCmd.Flags().BoolVarP(&cfg.Stream, "stream", "s", false, "Stream output in real-time")
 	rootCmd.Flags().BoolVarP(&cfg.Render, "render", "r", false, "Render markdown with colors and formatting")
+	rootCmd.Flags().BoolVarP(&cfg.Interactive, "interactive", "i", false, "Interactive chat mode")
 	rootCmd.Flags().StringVarP(&cfg.APIKey, "api-key", "a", "", "API key (defaults to PERPLEXITY_API_KEYS or PERPLEXITY_API_KEY env var)")
 	rootCmd.Flags().StringVarP(&cfg.Model, "model", "m", config.DefaultModel,
 		fmt.Sprintf("Model to use. Available: %s", config.GetAvailableModelsString()))
@@ -52,11 +66,6 @@ func run(cmd *cobra.Command, args []string) {
 		log.SetOutput(io.Discard)
 	}
 
-	query := args[0]
-	log.Printf("Query: %s", query)
-	log.Printf("Model: %s", cfg.Model)
-	log.Printf("Stream: %v", cfg.Stream)
-
 	if err := cfg.Validate(); err != nil {
 		display.ShowError(err.Error())
 		os.Exit(1)
@@ -68,6 +77,23 @@ func run(cmd *cobra.Command, args []string) {
 			log.Printf("Failed to initialize renderer: %v", err)
 		}
 	}
+
+	// Interactive mode
+	if cfg.Interactive {
+		runInteractive()
+		return
+	}
+
+	// Require query if not interactive mode
+	if len(args) == 0 {
+		_ = cmd.Help()
+		os.Exit(1)
+	}
+
+	query := args[0]
+	log.Printf("Query: %s", query)
+	log.Printf("Model: %s", cfg.Model)
+	log.Printf("Stream: %v", cfg.Stream)
 
 	client := api.NewClient(cfg)
 
@@ -179,4 +205,198 @@ func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+func runInteractive() {
+	fmt.Println("Perplexity CLI - Interactive Mode")
+	fmt.Printf("Model: %s\n", cfg.Model)
+	fmt.Println("Type /help for commands, Ctrl+C to quit, Tab for autocomplete")
+	fmt.Println()
+
+	// Setup readline with autocomplete
+	completer := readline.NewPrefixCompleter(commandItems...)
+
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:          "> ",
+		AutoComplete:    completer,
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+	})
+	if err != nil {
+		display.ShowError(err.Error())
+		return
+	}
+	defer rl.Close()
+
+	client := api.NewClient(cfg)
+	client.SetKeyRotationCallback(func(fromIndex, toIndex int, totalKeys int) {
+		display.ShowKeyRotation(fromIndex, toIndex, totalKeys)
+	})
+
+	messages := []api.Message{
+		{Role: "system", Content: config.DefaultSystemMessage},
+	}
+
+	for {
+		line, err := rl.Readline()
+		if err != nil {
+			if err == readline.ErrInterrupt {
+				fmt.Println("Goodbye!")
+				return
+			} else if err == io.EOF {
+				fmt.Println("Goodbye!")
+				return
+			}
+			display.ShowError(fmt.Sprintf("Error reading input: %v", err))
+			continue
+		}
+
+		input := strings.TrimSpace(line)
+		if input == "" {
+			continue
+		}
+
+		// Handle commands
+		if strings.HasPrefix(input, "/") {
+			if handleCommand(input, &messages) {
+				return
+			}
+			continue
+		}
+
+		// Regular chat
+		messages = append(messages, api.Message{Role: "user", Content: input})
+		fmt.Println()
+		response, citations, err := sendInteractiveMessage(client, messages)
+		if err != nil {
+			display.ShowError(err.Error())
+			messages = messages[:len(messages)-1]
+			continue
+		}
+		messages = append(messages, api.Message{Role: "assistant", Content: response})
+
+		// Show citations if enabled
+		if cfg.Citations && len(citations) > 0 {
+			fmt.Println()
+			display.ShowCitations(citations)
+		}
+		fmt.Println()
+	}
+}
+
+func handleCommand(input string, messages *[]api.Message) bool {
+	parts := strings.SplitN(input, " ", 2)
+	cmd := strings.ToLower(parts[0])
+
+	switch cmd {
+	case "/exit", "/quit", "/q":
+		fmt.Println("Goodbye!")
+		return true
+
+	case "/clear", "/c":
+		*messages = []api.Message{
+			{Role: "system", Content: config.DefaultSystemMessage},
+		}
+		fmt.Println("Conversation cleared.")
+
+	case "/help", "/h":
+		fmt.Println("\nCommands:")
+		fmt.Printf("  %-18s %s\n", "/exit, /quit, /q", "Exit interactive mode")
+		fmt.Printf("  %-18s %s\n", "/clear, /c", "Clear conversation history")
+		fmt.Printf("  %-18s %s\n", "/model <name>", "Switch model")
+		fmt.Printf("  %-18s %s\n", "/model", "Show current model")
+		fmt.Printf("  %-18s %s\n", "/help, /h", "Show this help")
+		fmt.Println()
+
+	case "/model":
+		if len(parts) > 1 {
+			newModel := strings.TrimSpace(parts[1])
+			if newModel == "" {
+				fmt.Printf("Current model: %s\n", cfg.Model)
+				fmt.Printf("Available: %s\n", config.GetAvailableModelsString())
+			} else if !config.ValidateModel(newModel) {
+				fmt.Printf("Invalid model: %s\n", newModel)
+				fmt.Printf("Available: %s\n", config.GetAvailableModelsString())
+			} else {
+				cfg.Model = newModel
+				fmt.Printf("Switched to model: %s\n", cfg.Model)
+			}
+		} else {
+			fmt.Printf("Current model: %s\n", cfg.Model)
+			fmt.Printf("Available: %s\n", config.GetAvailableModelsString())
+		}
+
+	default:
+		fmt.Printf("Unknown command: %s\n", cmd)
+		fmt.Println("Type /help for available commands")
+	}
+
+	return false
+}
+
+func sendInteractiveMessage(client *api.Client, messages []api.Message) (string, []string, error) {
+	if cfg.Stream {
+		var fullContent strings.Builder
+		var citations []string
+		firstChunk := true
+
+		sp := display.NewSpinner("Thinking...")
+		sp.Start()
+
+		err := client.QueryStreamWithHistory(messages,
+			func(content string) {
+				if firstChunk {
+					firstChunk = false
+					if cfg.Render {
+						sp.UpdateMessage("Receiving...")
+					} else {
+						sp.Stop()
+					}
+				}
+				if cfg.Render {
+					fullContent.WriteString(content)
+				} else {
+					fmt.Print(content)
+				}
+			},
+			func(resp *api.ChatResponse) {
+				if resp != nil {
+					citations = resp.Citations
+				}
+			},
+		)
+
+		sp.Stop()
+
+		if err != nil {
+			return "", nil, err
+		}
+
+		if cfg.Render {
+			display.ShowContentRendered(fullContent.String())
+			return fullContent.String(), citations, nil
+		}
+		fmt.Println()
+		return fullContent.String(), citations, nil
+	}
+
+	// Non-streaming
+	sp := display.NewSpinner("Thinking...")
+	sp.Start()
+
+	resp, err := client.QueryWithHistory(messages)
+	sp.Stop()
+
+	if err != nil {
+		return "", nil, err
+	}
+
+	content := resp.GetContent()
+	if cfg.Render {
+		display.ShowContentRendered(content)
+	} else {
+		display.ShowContent(content)
+	}
+
+	return content, resp.Citations, nil
 }
