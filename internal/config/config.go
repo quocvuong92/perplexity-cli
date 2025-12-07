@@ -38,6 +38,7 @@ type Config struct {
 	Citations       bool
 	Stream          bool
 	Render          bool // Render markdown output with colors/formatting
+	Interactive     bool // Interactive chat mode
 }
 
 // ErrAPIKeyNotFound is returned when no API key is available

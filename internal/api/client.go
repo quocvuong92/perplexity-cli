@@ -366,3 +366,196 @@ func (r *ChatResponse) GetUsageMap() map[string]int {
 		"total_tokens":      r.Usage.TotalTokens,
 	}
 }
+
+// QueryWithHistory sends a query with message history (for interactive mode)
+func (c *Client) QueryWithHistory(messages []Message) (*ChatResponse, error) {
+	return c.queryWithHistoryRetry(messages)
+}
+
+func (c *Client) queryWithHistoryRetry(messages []Message) (*ChatResponse, error) {
+	if c.config.GetKeyCount() <= 1 {
+		return c.doQueryWithHistory(messages)
+	}
+
+	for {
+		resp, err := c.doQueryWithHistory(messages)
+		if err == nil {
+			return resp, nil
+		}
+
+		apiErr, ok := err.(*APIError)
+		if !ok || !c.shouldRotateKey(apiErr.StatusCode, apiErr.Message) {
+			return nil, err
+		}
+
+		if rotateErr := c.rotateKey(); rotateErr != nil {
+			return nil, fmt.Errorf("%v (no more API keys available)", err)
+		}
+	}
+}
+
+func (c *Client) doQueryWithHistory(messages []Message) (*ChatResponse, error) {
+	reqBody := ChatRequest{
+		Model:    c.config.Model,
+		Messages: messages,
+		Stream:   false,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, c.config.APIURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp ErrorResponse
+		errMsg := fmt.Sprintf("status code %d", resp.StatusCode)
+		if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.Message != "" {
+			errMsg = errResp.Error.Message
+		}
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("API error: %s", errMsg),
+		}
+	}
+
+	var chatResp ChatResponse
+	if err := json.Unmarshal(body, &chatResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &chatResp, nil
+}
+
+// QueryStreamWithHistory sends a streaming query with message history (for interactive mode)
+func (c *Client) QueryStreamWithHistory(messages []Message, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+	return c.queryStreamWithHistoryRetry(messages, onChunk, onDone)
+}
+
+func (c *Client) queryStreamWithHistoryRetry(messages []Message, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+	if c.config.GetKeyCount() <= 1 {
+		return c.doQueryStreamWithHistory(messages, onChunk, onDone)
+	}
+
+	for {
+		err := c.doQueryStreamWithHistory(messages, onChunk, onDone)
+		if err == nil {
+			return nil
+		}
+
+		apiErr, ok := err.(*APIError)
+		if !ok || !c.shouldRotateKey(apiErr.StatusCode, apiErr.Message) {
+			return err
+		}
+
+		if rotateErr := c.rotateKey(); rotateErr != nil {
+			return fmt.Errorf("%v (no more API keys available)", err)
+		}
+	}
+}
+
+func (c *Client) doQueryStreamWithHistory(messages []Message, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+	reqBody := ChatRequest{
+		Model:    c.config.Model,
+		Messages: messages,
+		Stream:   true,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, c.config.APIURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		var errResp ErrorResponse
+		errMsg := fmt.Sprintf("status code %d", resp.StatusCode)
+		if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.Message != "" {
+			errMsg = errResp.Error.Message
+		}
+		return &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("API error: %s", errMsg),
+		}
+	}
+
+	var finalResp *ChatResponse
+	reader := bufio.NewReader(resp.Body)
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("failed to read stream: %w", err)
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk ChatResponse
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+
+		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+			onChunk(chunk.Choices[0].Delta.Content)
+		}
+
+		if len(chunk.Citations) > 0 || chunk.Usage.TotalTokens > 0 {
+			finalResp = &chunk
+		}
+	}
+
+	if onDone != nil && finalResp != nil {
+		onDone(finalResp)
+	}
+
+	return nil
+}
