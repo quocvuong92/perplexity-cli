@@ -211,6 +211,7 @@ func runInteractive() {
 	fmt.Println("Perplexity CLI - Interactive Mode")
 	fmt.Printf("Model: %s\n", cfg.Model)
 	fmt.Println("Type /help for commands, Ctrl+C to quit, Tab for autocomplete")
+	fmt.Println("Tip: End a line with \\ for multiline input")
 	fmt.Println()
 
 	// Setup readline with autocomplete
@@ -251,7 +252,20 @@ func runInteractive() {
 			continue
 		}
 
-		input := strings.TrimSpace(line)
+		// Support multiline input with trailing backslash
+		input := line
+		for strings.HasSuffix(strings.TrimRight(input, " \t"), "\\") {
+			input = strings.TrimSuffix(strings.TrimRight(input, " \t"), "\\") + "\n"
+			rl.SetPrompt("... ")
+			nextLine, err := rl.Readline()
+			if err != nil {
+				break
+			}
+			input += nextLine
+		}
+		rl.SetPrompt("> ")
+
+		input = strings.TrimSpace(input)
 		if input == "" {
 			continue
 		}
