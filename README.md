@@ -1,31 +1,21 @@
-## Perplexity CLI
+# Perplexity CLI
 
-Perplexity CLI is a simple and convenient command-line client for the Perplexity API, allowing users to quickly ask questions and receive answers directly from the terminal.
+A command-line interface for the Perplexity API that brings AI-powered search and answers directly to your terminal.
 
-![screen](docs/screen.png)
+![Interactive Mode Demo](docs/screen-shot.png)
 
 ## Features
 
-- Easy querying of the Perplexity API
-- Support for various language models
-- Real-time streaming output (SSE)
-- Interactive chat mode with conversation history
-- Optional display of token usage statistics
-- Optional display of citations
-- Markdown output format for easy copying
-- Rendered markdown output with colors and formatting
-- API key handling from environment variable or command-line argument
-- Multiple API keys support with automatic rotation
-- Cross-platform support (macOS, Linux, Windows)
-
-## Requirements
-
-- Go 1.21+ (for building from source)
-- Perplexity API key
+- **Interactive Chat Mode** - Conversational interface with history and context
+- **Real-time Streaming** - SSE-powered live response streaming
+- **Formatted Output** - Rendered markdown with syntax highlighting
+- **Multiple API Keys** - Automatic rotation on failure or rate limits
+- **Token Statistics** - Optional usage tracking and citations
+- **Cross-platform** - macOS, Linux, and Windows support
 
 ## Installation
 
-### From Source
+### Quick Install
 
 ```bash
 git clone https://github.com/quocvuong92/perplexity-cli.git
@@ -33,135 +23,79 @@ cd perplexity-cli
 make install
 ```
 
-### Manual Installation
+### API Configuration
 
 ```bash
-# Build the binary
-make build
-
-# Copy to your PATH
-cp perplexity /usr/local/bin/
-```
-
-### Set API Key
-
-```bash
-# Single API key
+# Single key
 export PERPLEXITY_API_KEY="your-api-key"
 
-# Multiple API keys (comma-separated) - automatically rotates on failure
+# Multiple keys (automatic rotation)
 export PERPLEXITY_API_KEYS="key1,key2,key3"
 ```
 
-Add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) for persistence.
+Add to `~/.bashrc` or `~/.zshrc` for persistence.
 
-> **Note:** When using multiple keys via `PERPLEXITY_API_KEYS`, the CLI will automatically switch to the next key if the current one fails (e.g., due to rate limits or exhausted credits).
-
-## Usage
+## Quick Start
 
 ```bash
-perplexity "What is the meaning of life?"
-```
+# Simple query
+perplexity "What is quantum computing?"
 
-### With Streaming (Real-time Output)
+# Streaming with rendered output
+perplexity -sr "Explain relativity"
 
-```bash
-perplexity -s "Explain quantum computing"
-```
-
-### With Additional Options
-
-```bash
-perplexity -scu "Explain Einstein's theory of relativity"
+# Interactive mode
+perplexity -i
 ```
 
 ## Options
 
 | Flag | Description |
 |------|-------------|
+| `-i, --interactive` | Interactive chat mode with conversation history |
 | `-s, --stream` | Stream output in real-time |
 | `-r, --render` | Render markdown with colors and formatting |
-| `-i, --interactive` | Interactive chat mode with conversation history |
+| `-c, --citations` | Display citations |
 | `-u, --usage` | Show token usage statistics |
-| `-c, --citations` | Show citations |
-| `-m, --model` | Choose the language model (default: sonar-pro) |
-| `-a, --api-key` | Set the API key (defaults to `PERPLEXITY_API_KEYS` or `PERPLEXITY_API_KEY` env var) |
-| `-v, --verbose` | Enable debug mode |
-
-> **Note:** When using `--render` with `--stream`, output is buffered and rendered after the response completes (real-time streaming is disabled).
+| `-m, --model` | Choose model (default: sonar-pro) |
+| `-a, --api-key` | Override API key |
+| `-v, --verbose` | Enable verbose logging |
 
 ## Interactive Mode
 
-Start an interactive chat session with conversation history:
+Launch an interactive session with persistent conversation context:
 
 ```bash
-perplexity -i
-perplexity --interactive
-
-# With streaming and rendering
 perplexity -isr
-
-# With citations
-perplexity -isc
 ```
 
-### Slash Commands
+### Available Commands
 
-| Command | Description |
-|---------|-------------|
-| `/exit`, `/quit`, `/q` | Exit interactive mode |
-| `/clear`, `/c` | Clear conversation history |
-| `/model <name>` | Switch model |
-| `/model` | Show current model |
-| `/help`, `/h` | Show available commands |
+| Command | Action |
+|---------|--------|
+| `/exit`, `/quit`, `/q` | Exit session |
+| `/clear`, `/c` | Reset conversation |
+| `/model [name]` | Switch or show model |
+| `/help`, `/h` | Display commands |
 
-### Example Session
+## Models
 
-```
-$ perplexity -isr
-Perplexity CLI - Interactive Mode
-Model: sonar-pro
-Type /help for commands, Ctrl+C to quit, Tab for autocomplete
-
-> What is Kubernetes?
-Kubernetes is an open-source container orchestration platform...
-
-> How does it compare to Docker Swarm?
-Building on what I explained about Kubernetes, here's how it compares...
-
-> /model sonar-reasoning-pro
-Switched to model: sonar-reasoning-pro
-
-> /clear
-Conversation cleared.
-
-> /exit
-Goodbye!
-```
-
-## Available Models
-
-- sonar-reasoning-pro
-- sonar-reasoning
-- sonar-pro
-- sonar
+- `sonar-reasoning-pro` - Advanced reasoning capabilities
+- `sonar-reasoning` - Standard reasoning model
+- `sonar-pro` - Professional search (default)
+- `sonar` - Base search model
+- `sonar-deep-research` - Deep research analysis
 
 ## Building
 
 ```bash
-# Build for current platform
-make build
-
-# Build for macOS (arm64 + amd64)
-make build-darwin
-
-# Build for all platforms
-make build-all
-
-# Clean build artifacts
-make clean
+make build          # Current platform
+make build-darwin   # macOS (Universal)
+make build-all      # All platforms
 ```
+
+**Requirements:** Go 1.21+
 
 ## License
 
-This project is released under the MIT License.
+MIT License
