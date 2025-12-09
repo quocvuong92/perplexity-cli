@@ -116,9 +116,12 @@ func (s *InteractiveSession) executor(input string) {
 		s.messages = s.messages[:len(s.messages)-1]
 		return
 	}
-	if response != "" {
-		s.messages = append(s.messages, api.Message{Role: "assistant", Content: response})
+	// Always append assistant response to maintain alternating user/assistant pattern
+	// Use placeholder if response is empty to satisfy API requirements
+	if response == "" {
+		response = "I apologize, but I couldn't generate a response."
 	}
+	s.messages = append(s.messages, api.Message{Role: "assistant", Content: response})
 	if cfg.Citations && len(citations) > 0 {
 		fmt.Println()
 		display.ShowCitations(citations)
