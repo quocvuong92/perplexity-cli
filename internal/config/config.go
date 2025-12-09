@@ -13,6 +13,7 @@ var AvailableModels = []string{
 	"sonar-reasoning",
 	"sonar-pro",
 	"sonar",
+	"sonar-deep-research",
 }
 
 // DefaultModel is the default model to use
