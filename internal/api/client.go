@@ -16,7 +16,7 @@ import (
 // Message represents a chat message
 type Message struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content string `json:"content,omitempty"`
 }
 
 // ChatRequest represents the API request payload
