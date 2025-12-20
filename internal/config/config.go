@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"slices"
 	"strconv"
@@ -159,8 +160,9 @@ func (c *Config) Validate() error {
 		return ErrAPIKeyNotFound
 	}
 
-	c.CurrentKeyIndex = 0
-	c.APIKey = c.APIKeys[0]
+	// Random starting key for load balancing across multiple keys
+	c.CurrentKeyIndex = rand.IntN(len(c.APIKeys))
+	c.APIKey = c.APIKeys[c.CurrentKeyIndex]
 
 	if !ValidateModel(c.Model) {
 		return fmt.Errorf("%w: %s. Available models: %s", ErrInvalidModel, c.Model, GetAvailableModelsString())
