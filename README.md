@@ -2,8 +2,6 @@
 
 A command-line interface for the Perplexity API that brings AI-powered search and answers directly to your terminal.
 
-![Interactive Mode Demo](docs/screen-shot.png)
-
 ## Features
 
 - **Interactive Chat Mode** - Conversational interface with history and context
