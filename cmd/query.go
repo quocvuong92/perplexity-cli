@@ -9,11 +9,11 @@ import (
 )
 
 // runNormal executes a single query in non-streaming mode
-func runNormal(client *api.Client, query string) {
+func (app *App) runNormal(query string) {
 	sp := display.NewSpinner("Waiting for response...")
 	sp.Start()
 
-	resp, err := client.Query(query)
+	resp, err := app.client.Query(query)
 	sp.Stop()
 
 	if err != nil {
@@ -21,23 +21,23 @@ func runNormal(client *api.Client, query string) {
 		return
 	}
 
-	if cfg.Render {
+	if app.cfg.Render {
 		display.ShowContentRendered(resp.GetContent())
 	} else {
 		display.ShowContent(resp.GetContent())
 	}
 
-	if cfg.Citations && len(resp.Citations) > 0 {
+	if app.cfg.Citations && len(resp.Citations) > 0 {
 		display.ShowCitations(resp.Citations)
 	}
 
-	if cfg.Usage {
+	if app.cfg.Usage {
 		display.ShowUsage(resp.GetUsageMap())
 	}
 }
 
 // runStream executes a single query in streaming mode
-func runStream(client *api.Client, query string) {
+func (app *App) runStream(query string) {
 	var finalResp *api.ChatResponse
 	var fullContent strings.Builder
 	firstChunk := true
@@ -46,11 +46,11 @@ func runStream(client *api.Client, query string) {
 	sp := display.NewSpinner("Waiting for response...")
 	sp.Start()
 
-	err := client.QueryStream(query,
+	err := app.client.QueryStream(query,
 		func(content string) {
 			if firstChunk {
 				firstChunk = false
-				if cfg.Render {
+				if app.cfg.Render {
 					// Update spinner message - keep spinning while collecting content
 					sp.UpdateMessage("Receiving response...")
 				} else {
@@ -59,7 +59,7 @@ func runStream(client *api.Client, query string) {
 				}
 			}
 
-			if cfg.Render {
+			if app.cfg.Render {
 				// Collect content for rendering at the end
 				fullContent.WriteString(content)
 			} else {
@@ -79,7 +79,7 @@ func runStream(client *api.Client, query string) {
 		return
 	}
 
-	if cfg.Render {
+	if app.cfg.Render {
 		// Render collected content
 		display.ShowContentRendered(fullContent.String())
 	} else {
@@ -87,12 +87,12 @@ func runStream(client *api.Client, query string) {
 	}
 
 	if finalResp != nil {
-		if cfg.Citations && len(finalResp.Citations) > 0 {
+		if app.cfg.Citations && len(finalResp.Citations) > 0 {
 			fmt.Println()
 			display.ShowCitations(finalResp.Citations)
 		}
 
-		if cfg.Usage {
+		if app.cfg.Usage {
 			fmt.Println()
 			display.ShowUsage(finalResp.GetUsageMap())
 		}

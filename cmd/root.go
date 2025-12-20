@@ -13,60 +13,84 @@ import (
 	"github.com/quocvuong92/perplexity-cli/internal/display"
 )
 
-var (
-	cfg     *config.Config
-	verbose bool
-)
+// App holds the application state
+type App struct {
+	cfg        *config.Config
+	client     *api.Client
+	verbose    bool
+	listModels bool
+}
 
-var rootCmd = &cobra.Command{
-	Use:   "perplexity [query]",
-	Short: "A CLI client for the Perplexity API",
-	Long: `Perplexity CLI is a simple and convenient command-line client
+// NewApp creates a new App instance with default configuration
+func NewApp() *App {
+	return &App{
+		cfg: config.NewConfig(),
+	}
+}
+
+// Execute runs the root command
+func Execute() {
+	app := NewApp()
+
+	rootCmd := &cobra.Command{
+		Use:   "perplexity [query]",
+		Short: "A CLI client for the Perplexity API",
+		Long: `Perplexity CLI is a simple and convenient command-line client
 for the Perplexity API, allowing users to quickly ask questions
 and receive answers directly from the terminal.
 
 Output is in markdown format for easy copying.`,
-	Args: cobra.MaximumNArgs(1),
-	Run:  run,
-}
+		Args: cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			app.run(cmd, args)
+		},
+	}
 
-func init() {
-	cfg = config.NewConfig()
-
-	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug mode")
-	rootCmd.Flags().BoolVarP(&cfg.Usage, "usage", "u", false, "Show token usage statistics")
-	rootCmd.Flags().BoolVarP(&cfg.Citations, "citations", "c", false, "Show citations")
-	rootCmd.Flags().BoolVarP(&cfg.Stream, "stream", "s", false, "Stream output in real-time")
-	rootCmd.Flags().BoolVarP(&cfg.Render, "render", "r", false, "Render markdown with colors and formatting")
-	rootCmd.Flags().BoolVarP(&cfg.Interactive, "interactive", "i", false, "Interactive chat mode")
-	rootCmd.Flags().StringVarP(&cfg.APIKey, "api-key", "a", "", "API key (defaults to PERPLEXITY_API_KEYS or PERPLEXITY_API_KEY env var)")
-	rootCmd.Flags().StringVarP(&cfg.Model, "model", "m", config.DefaultModel,
+	rootCmd.Flags().BoolVarP(&app.verbose, "verbose", "v", false, "Enable debug mode")
+	rootCmd.Flags().BoolVarP(&app.cfg.Usage, "usage", "u", false, "Show token usage statistics")
+	rootCmd.Flags().BoolVarP(&app.cfg.Citations, "citations", "c", false, "Show citations")
+	rootCmd.Flags().BoolVarP(&app.cfg.Stream, "stream", "s", false, "Stream output in real-time")
+	rootCmd.Flags().BoolVarP(&app.cfg.Render, "render", "r", false, "Render markdown with colors and formatting")
+	rootCmd.Flags().BoolVarP(&app.cfg.Interactive, "interactive", "i", false, "Interactive chat mode")
+	rootCmd.Flags().StringVarP(&app.cfg.APIKey, "api-key", "a", "", "API key (defaults to PERPLEXITY_API_KEYS or PERPLEXITY_API_KEY env var)")
+	rootCmd.Flags().StringVarP(&app.cfg.Model, "model", "m", config.DefaultModel,
 		fmt.Sprintf("Model to use. Available: %s", config.GetAvailableModelsString()))
+	rootCmd.Flags().BoolVar(&app.listModels, "list-models", false, "List available models")
+
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
 }
 
-func run(cmd *cobra.Command, args []string) {
-	if verbose {
+func (app *App) run(cmd *cobra.Command, args []string) {
+	if app.verbose {
 		log.SetOutput(os.Stderr)
 		log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	} else {
 		log.SetOutput(io.Discard)
 	}
 
-	if err := cfg.Validate(); err != nil {
+	// Handle --list-models flag (doesn't require API key)
+	if app.listModels {
+		display.ShowModels(config.AvailableModels, app.cfg.Model)
+		return
+	}
+
+	if err := app.cfg.Validate(); err != nil {
 		display.ShowError(err.Error())
 		os.Exit(1)
 	}
 
 	// Initialize markdown renderer if render flag is set
-	if cfg.Render {
+	if app.cfg.Render {
 		if err := display.InitRenderer(); err != nil {
 			log.Printf("Failed to initialize renderer: %v", err)
 		}
 	}
 
 	// Interactive mode
-	if cfg.Interactive {
-		runInteractive()
+	if app.cfg.Interactive {
+		app.runInteractive()
 		return
 	}
 
@@ -78,28 +102,21 @@ func run(cmd *cobra.Command, args []string) {
 
 	query := args[0]
 	log.Printf("Query: %s", query)
-	log.Printf("Model: %s", cfg.Model)
-	log.Printf("Stream: %v", cfg.Stream)
+	log.Printf("Model: %s", app.cfg.Model)
+	log.Printf("Stream: %v", app.cfg.Stream)
 
-	client := api.NewClient(cfg)
+	app.client = api.NewClient(app.cfg)
 
 	// Set up key rotation callback to notify user
-	client.SetKeyRotationCallback(func(fromIndex, toIndex int, totalKeys int) {
+	app.client.SetKeyRotationCallback(func(fromIndex, toIndex int, totalKeys int) {
 		display.ShowKeyRotation(fromIndex, toIndex, totalKeys)
 	})
 
 	log.Printf("Sending request to API...")
 
-	if cfg.Stream {
-		runStream(client, query)
+	if app.cfg.Stream {
+		app.runStream(query)
 	} else {
-		runNormal(client, query)
-	}
-}
-
-// Execute runs the root command
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
+		app.runNormal(query)
 	}
 }

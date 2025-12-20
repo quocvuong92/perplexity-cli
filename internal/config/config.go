@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // AvailableModels lists all supported Perplexity models
@@ -25,10 +28,14 @@ const DefaultSystemMessage = "Be precise and concise."
 // DefaultAPIURL is the Perplexity API endpoint
 const DefaultAPIURL = "https://api.perplexity.ai/chat/completions"
 
+// DefaultTimeout is the default HTTP client timeout
+const DefaultTimeout = 120 * time.Second
+
 // Environment variable names
 const (
 	EnvAPIKeys = "PERPLEXITY_API_KEYS" // Comma-separated list of API keys
 	EnvAPIKey  = "PERPLEXITY_API_KEY"  // Single API key (fallback)
+	EnvTimeout = "PERPLEXITY_TIMEOUT"  // Timeout in seconds
 )
 
 // Config holds the application configuration
@@ -38,6 +45,7 @@ type Config struct {
 	APIKeys         []string // All available API keys
 	CurrentKeyIndex int      // Index of current key in APIKeys
 	Model           string
+	Timeout         time.Duration // HTTP client timeout
 	Usage           bool
 	Citations       bool
 	Stream          bool
@@ -81,12 +89,7 @@ var CreditExhaustedPatterns = []string{
 
 // ValidateModel checks if the given model is valid
 func ValidateModel(model string) bool {
-	for _, m := range AvailableModels {
-		if m == model {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(AvailableModels, model)
 }
 
 // GetAvailableModelsString returns a formatted string of available models
@@ -123,13 +126,23 @@ func GetAPIKeysFromEnv() []string {
 // NewConfig creates a new Config with defaults
 func NewConfig() *Config {
 	return &Config{
-		APIURL: DefaultAPIURL,
-		Model:  DefaultModel,
+		APIURL:  DefaultAPIURL,
+		Model:   DefaultModel,
+		Timeout: DefaultTimeout,
 	}
 }
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
+	// Load timeout from environment if not already set to non-default
+	if c.Timeout == DefaultTimeout {
+		if timeoutStr := os.Getenv(EnvTimeout); timeoutStr != "" {
+			if seconds, err := strconv.Atoi(timeoutStr); err == nil && seconds > 0 {
+				c.Timeout = time.Duration(seconds) * time.Second
+			}
+		}
+	}
+
 	// If API key is provided via flag, use it directly (single key mode)
 	if c.APIKey != "" {
 		c.APIKeys = []string{c.APIKey}
