@@ -43,7 +43,10 @@ func NewSpinner(message string) *Spinner {
 
 // Start begins the spinner animation
 func (sp *Spinner) Start() {
+	sp.mu.Lock()
 	sp.startTime = time.Now()
+	sp.mu.Unlock()
+
 	sp.s.Start()
 
 	// Update elapsed time in background
@@ -57,8 +60,15 @@ func (sp *Spinner) Start() {
 			case <-sp.stopChan:
 				return
 			case <-ticker.C:
+				sp.mu.Lock()
+				if sp.stopped {
+					sp.mu.Unlock()
+					return
+				}
 				elapsed := time.Since(sp.startTime).Seconds()
-				sp.s.Suffix = fmt.Sprintf(" %s (%.1fs)", sp.message, elapsed)
+				message := sp.message
+				sp.mu.Unlock()
+				sp.s.Suffix = fmt.Sprintf(" %s (%.1fs)", message, elapsed)
 			}
 		}
 	}()
@@ -151,10 +161,22 @@ func ShowContentRendered(content string) {
 
 // ShowError displays an error message
 func ShowError(message string) {
-	fmt.Printf("Error: %s\n", message)
+	fmt.Fprintf(os.Stderr, "Error: %s\n", message)
 }
 
 // ShowKeyRotation displays a message when API key is rotated
 func ShowKeyRotation(fromIndex, toIndex int, totalKeys int) {
 	fmt.Fprintf(os.Stderr, "Note: API key %d/%d failed, switching to key %d/%d\n", fromIndex, totalKeys, toIndex, totalKeys)
+}
+
+// ShowModels displays available models
+func ShowModels(models []string, currentModel string) {
+	fmt.Println("Available models:")
+	for _, m := range models {
+		if m == currentModel {
+			fmt.Printf("  * %s (current)\n", m)
+		} else {
+			fmt.Printf("    %s\n", m)
+		}
+	}
 }

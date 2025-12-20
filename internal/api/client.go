@@ -3,12 +3,13 @@ package api
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
-	"time"
 
 	"github.com/quocvuong92/perplexity-cli/internal/config"
 )
@@ -81,7 +82,7 @@ type Client struct {
 func NewClient(cfg *config.Config) *Client {
 	return &Client{
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout: cfg.Timeout,
 		},
 		config: cfg,
 	}
@@ -95,10 +96,8 @@ func (c *Client) SetKeyRotationCallback(callback func(fromIndex, toIndex int, to
 // shouldRotateKey checks if the error indicates we should try another key
 func (c *Client) shouldRotateKey(statusCode int, errorMsg string) bool {
 	// Check status codes that indicate key issues
-	for _, code := range config.RotatableErrorCodes {
-		if statusCode == code {
-			return true
-		}
+	if slices.Contains(config.RotatableErrorCodes, statusCode) {
+		return true
 	}
 
 	// Check error message patterns
@@ -130,20 +129,30 @@ func (c *Client) rotateKey() error {
 
 // Query sends a query to the Perplexity API (non-streaming)
 func (c *Client) Query(message string) (*ChatResponse, error) {
-	return c.queryWithRetry(message)
+	return c.QueryContext(context.Background(), message)
+}
+
+// QueryContext sends a query to the Perplexity API with context support (non-streaming)
+func (c *Client) QueryContext(ctx context.Context, message string) (*ChatResponse, error) {
+	return c.queryWithRetry(ctx, message)
 }
 
 // queryWithRetry performs the query with automatic key rotation on failure
-func (c *Client) queryWithRetry(message string) (*ChatResponse, error) {
+func (c *Client) queryWithRetry(ctx context.Context, message string) (*ChatResponse, error) {
 	// If only one key, no retry needed
 	if c.config.GetKeyCount() <= 1 {
-		return c.doQuery(message)
+		return c.doQuery(ctx, message)
 	}
 
 	for {
-		resp, err := c.doQuery(message)
+		resp, err := c.doQuery(ctx, message)
 		if err == nil {
 			return resp, nil
+		}
+
+		// Check if context was cancelled
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 
 		// Check if we should rotate keys
@@ -160,32 +169,42 @@ func (c *Client) queryWithRetry(message string) (*ChatResponse, error) {
 }
 
 // doQuery performs a single query attempt
-func (c *Client) doQuery(message string) (*ChatResponse, error) {
+func (c *Client) doQuery(ctx context.Context, message string) (*ChatResponse, error) {
 	messages := []Message{
 		{Role: "system", Content: config.DefaultSystemMessage},
 		{Role: "user", Content: message},
 	}
-	return c.doQueryWithHistory(messages)
+	return c.doQueryWithHistory(ctx, messages)
 }
 
 // QueryStream sends a streaming query to the Perplexity API
 func (c *Client) QueryStream(message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
-	return c.queryStreamWithRetry(message, onChunk, onDone)
+	return c.QueryStreamContext(context.Background(), message, onChunk, onDone)
+}
+
+// QueryStreamContext sends a streaming query to the Perplexity API with context support
+func (c *Client) QueryStreamContext(ctx context.Context, message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+	return c.queryStreamWithRetry(ctx, message, onChunk, onDone)
 }
 
 // queryStreamWithRetry performs the streaming query with automatic key rotation on failure
 // Note: Key rotation only happens before streaming starts (on HTTP errors).
 // Once streaming begins successfully, mid-stream errors are not retried to avoid duplicate content.
-func (c *Client) queryStreamWithRetry(message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+func (c *Client) queryStreamWithRetry(ctx context.Context, message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
 	// If only one key, no retry needed
 	if c.config.GetKeyCount() <= 1 {
-		return c.doQueryStream(message, onChunk, onDone)
+		return c.doQueryStream(ctx, message, onChunk, onDone)
 	}
 
 	for {
-		err := c.doQueryStream(message, onChunk, onDone)
+		err := c.doQueryStream(ctx, message, onChunk, onDone)
 		if err == nil {
 			return nil
+		}
+
+		// Check if context was cancelled
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 
 		// Check if we should rotate keys
@@ -204,12 +223,12 @@ func (c *Client) queryStreamWithRetry(message string, onChunk func(content strin
 }
 
 // doQueryStream performs a single streaming query attempt
-func (c *Client) doQueryStream(message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+func (c *Client) doQueryStream(ctx context.Context, message string, onChunk func(content string), onDone func(resp *ChatResponse)) error {
 	messages := []Message{
 		{Role: "system", Content: config.DefaultSystemMessage},
 		{Role: "user", Content: message},
 	}
-	return c.doQueryStreamWithHistory(messages, onChunk, onDone)
+	return c.doQueryStreamWithHistory(ctx, messages, onChunk, onDone)
 }
 
 // GetContent extracts the content from the response
@@ -234,18 +253,28 @@ func (r *ChatResponse) GetUsageMap() map[string]int {
 
 // QueryWithHistory sends a query with message history (for interactive mode)
 func (c *Client) QueryWithHistory(messages []Message) (*ChatResponse, error) {
-	return c.queryWithHistoryRetry(messages)
+	return c.QueryWithHistoryContext(context.Background(), messages)
 }
 
-func (c *Client) queryWithHistoryRetry(messages []Message) (*ChatResponse, error) {
+// QueryWithHistoryContext sends a query with message history and context support
+func (c *Client) QueryWithHistoryContext(ctx context.Context, messages []Message) (*ChatResponse, error) {
+	return c.queryWithHistoryRetry(ctx, messages)
+}
+
+func (c *Client) queryWithHistoryRetry(ctx context.Context, messages []Message) (*ChatResponse, error) {
 	if c.config.GetKeyCount() <= 1 {
-		return c.doQueryWithHistory(messages)
+		return c.doQueryWithHistory(ctx, messages)
 	}
 
 	for {
-		resp, err := c.doQueryWithHistory(messages)
+		resp, err := c.doQueryWithHistory(ctx, messages)
 		if err == nil {
 			return resp, nil
+		}
+
+		// Check if context was cancelled
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 
 		apiErr, ok := err.(*APIError)
@@ -259,7 +288,7 @@ func (c *Client) queryWithHistoryRetry(messages []Message) (*ChatResponse, error
 	}
 }
 
-func (c *Client) doQueryWithHistory(messages []Message) (*ChatResponse, error) {
+func (c *Client) doQueryWithHistory(ctx context.Context, messages []Message) (*ChatResponse, error) {
 	reqBody := ChatRequest{
 		Model:    c.config.Model,
 		Messages: messages,
@@ -271,7 +300,7 @@ func (c *Client) doQueryWithHistory(messages []Message) (*ChatResponse, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, c.config.APIURL, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.APIURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -313,18 +342,28 @@ func (c *Client) doQueryWithHistory(messages []Message) (*ChatResponse, error) {
 
 // QueryStreamWithHistory sends a streaming query with message history (for interactive mode)
 func (c *Client) QueryStreamWithHistory(messages []Message, onChunk func(content string), onDone func(resp *ChatResponse)) error {
-	return c.queryStreamWithHistoryRetry(messages, onChunk, onDone)
+	return c.QueryStreamWithHistoryContext(context.Background(), messages, onChunk, onDone)
 }
 
-func (c *Client) queryStreamWithHistoryRetry(messages []Message, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+// QueryStreamWithHistoryContext sends a streaming query with message history and context support
+func (c *Client) QueryStreamWithHistoryContext(ctx context.Context, messages []Message, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+	return c.queryStreamWithHistoryRetry(ctx, messages, onChunk, onDone)
+}
+
+func (c *Client) queryStreamWithHistoryRetry(ctx context.Context, messages []Message, onChunk func(content string), onDone func(resp *ChatResponse)) error {
 	if c.config.GetKeyCount() <= 1 {
-		return c.doQueryStreamWithHistory(messages, onChunk, onDone)
+		return c.doQueryStreamWithHistory(ctx, messages, onChunk, onDone)
 	}
 
 	for {
-		err := c.doQueryStreamWithHistory(messages, onChunk, onDone)
+		err := c.doQueryStreamWithHistory(ctx, messages, onChunk, onDone)
 		if err == nil {
 			return nil
+		}
+
+		// Check if context was cancelled
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 
 		apiErr, ok := err.(*APIError)
@@ -338,7 +377,7 @@ func (c *Client) queryStreamWithHistoryRetry(messages []Message, onChunk func(co
 	}
 }
 
-func (c *Client) doQueryStreamWithHistory(messages []Message, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+func (c *Client) doQueryStreamWithHistory(ctx context.Context, messages []Message, onChunk func(content string), onDone func(resp *ChatResponse)) error {
 	reqBody := ChatRequest{
 		Model:    c.config.Model,
 		Messages: messages,
@@ -350,7 +389,7 @@ func (c *Client) doQueryStreamWithHistory(messages []Message, onChunk func(conte
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, c.config.APIURL, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.APIURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -382,6 +421,13 @@ func (c *Client) doQueryStreamWithHistory(messages []Message, onChunk func(conte
 	reader := bufio.NewReader(resp.Body)
 
 	for {
+		// Check if context is cancelled
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
