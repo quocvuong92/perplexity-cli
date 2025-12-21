@@ -1,10 +1,13 @@
 # Perplexity CLI
 
-A command-line interface for the Perplexity API that brings AI-powered search and answers directly to your terminal.
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+A fast and simple command-line client for the Perplexity API with interactive chat mode, built with Go.
 
 ## Features
 
-- **Interactive Chat Mode** - Conversational interface with history and context
+- **Interactive Chat Mode** - Conversational interface with history persistence and context
 - **Real-time Streaming** - SSE-powered live response streaming
 - **Formatted Output** - Rendered markdown with syntax highlighting
 - **Multiple API Keys** - Automatic rotation on failure or rate limits
@@ -13,7 +16,7 @@ A command-line interface for the Perplexity API that brings AI-powered search an
 
 ## Installation
 
-### Quick Install
+### From Source
 
 ```bash
 git clone https://github.com/quocvuong92/perplexity-cli.git
@@ -21,7 +24,7 @@ cd perplexity-cli
 make install
 ```
 
-### API Configuration
+### Configuration
 
 ```bash
 # Single key
@@ -33,7 +36,9 @@ export PERPLEXITY_API_KEYS="key1,key2,key3"
 
 Add to `~/.bashrc` or `~/.zshrc` for persistence.
 
-## Quick Start
+## Usage
+
+### Quick Start
 
 ```bash
 # Simple query
@@ -46,7 +51,7 @@ perplexity -sr "Explain relativity"
 perplexity -i
 ```
 
-## Options
+### Options
 
 | Flag | Description |
 |------|-------------|
@@ -59,7 +64,7 @@ perplexity -i
 | `-a, --api-key` | Override API key |
 | `-v, --verbose` | Enable verbose logging |
 
-## Interactive Mode
+### Interactive Mode
 
 Launch an interactive session with persistent conversation context:
 
@@ -67,22 +72,32 @@ Launch an interactive session with persistent conversation context:
 perplexity -isr
 ```
 
-### Available Commands
+**Commands:**
 
-| Command | Action |
-|---------|--------|
-| `/exit`, `/quit`, `/q` | Exit session |
+| Command | Description |
+|---------|-------------|
+| `/model [name]`, `/m` | Switch or show model |
+| `/citations [on\|off]` | Toggle citations display |
+| `/history` | Show recent conversations |
+| `/resume` | Resume last conversation |
 | `/clear`, `/c` | Reset conversation |
-| `/model [name]` | Switch or show model |
 | `/help`, `/h` | Display commands |
+| `/exit`, `/q` | Exit session |
 
-## Models
+**Tips:**
+- Press `Ctrl+C` during a response to cancel without exiting
+- Use `\` at end of line for multiline input
+- Tab completion available for commands
 
-- `sonar-reasoning-pro` - Advanced reasoning capabilities
-- `sonar-reasoning` - Standard reasoning model
-- `sonar-pro` - Professional search (default)
-- `sonar` - Base search model
-- `sonar-deep-research` - Deep research analysis
+### Available Models
+
+| Model | Description |
+|-------|-------------|
+| `sonar-pro` | Professional search (default) |
+| `sonar` | Base search model |
+| `sonar-reasoning-pro` | Advanced reasoning capabilities |
+| `sonar-reasoning` | Standard reasoning model |
+| `sonar-deep-research` | Deep research analysis |
 
 ## Building
 
@@ -92,8 +107,11 @@ make build-darwin   # macOS (Universal)
 make build-all      # All platforms
 ```
 
-**Requirements:** Go 1.21+
+## Requirements
+
+- Go 1.24+
+- Perplexity API key ([Get one here](https://www.perplexity.ai/settings/api))
 
 ## License
 
-MIT License
+MIT License - see [LICENSE](LICENSE) for details.
