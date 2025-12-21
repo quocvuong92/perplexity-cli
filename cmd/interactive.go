@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 
 	"github.com/elk-language/go-prompt"
 	istrings "github.com/elk-language/go-prompt/strings"
@@ -15,6 +19,63 @@ import (
 	"github.com/quocvuong92/perplexity-cli/internal/history"
 )
 
+// InterruptibleContext manages a cancellable context for operations.
+// It allows Ctrl+C to cancel the current operation instead of exiting the CLI.
+type InterruptibleContext struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	mu     sync.Mutex
+	active bool
+}
+
+// NewInterruptibleContext creates a new interruptible context manager.
+func NewInterruptibleContext() *InterruptibleContext {
+	return &InterruptibleContext{}
+}
+
+// Start begins an interruptible operation, returning a context that will be
+// cancelled if Ctrl+C is pressed during the operation.
+func (ic *InterruptibleContext) Start() context.Context {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+
+	ic.ctx, ic.cancel = context.WithCancel(context.Background())
+	ic.active = true
+
+	// Set up signal handler for this operation
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGINT)
+
+	go func() {
+		select {
+		case <-sigChan:
+			ic.mu.Lock()
+			if ic.active {
+				fmt.Fprintf(os.Stderr, "\n⚠️  Operation cancelled\n")
+				ic.cancel()
+			}
+			ic.mu.Unlock()
+		case <-ic.ctx.Done():
+			// Context completed normally
+		}
+		signal.Stop(sigChan)
+		close(sigChan)
+	}()
+
+	return ic.ctx
+}
+
+// Stop ends the interruptible operation and cleans up.
+func (ic *InterruptibleContext) Stop() {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+
+	ic.active = false
+	if ic.cancel != nil {
+		ic.cancel()
+	}
+}
+
 // InteractiveSession holds the state for interactive mode
 type InteractiveSession struct {
 	app            *App
@@ -24,6 +85,7 @@ type InteractiveSession struct {
 	inputBuffer    []string // Buffer for multiline input
 	history        *history.History
 	conversationID string
+	interruptCtx   *InterruptibleContext // For graceful Ctrl+C cancellation
 }
 
 // runInteractive starts the interactive chat mode
@@ -53,6 +115,7 @@ func (app *App) runInteractive() {
 		exitFlag:       false,
 		history:        hist,
 		conversationID: uuid.New().String(),
+		interruptCtx:   NewInterruptibleContext(),
 	}
 
 	session.client.SetKeyRotationCallback(func(fromIndex, toIndex int, totalKeys int) {
@@ -175,6 +238,12 @@ func (s *InteractiveSession) executor(input string) {
 	fmt.Println()
 	response, citations, err := s.sendInteractiveMessage()
 	if err != nil {
+		// Check if it was a cancellation
+		if err == context.Canceled {
+			// Remove the user message since we didn't complete
+			s.messages = s.messages[:len(s.messages)-1]
+			return
+		}
 		display.ShowError(err.Error())
 		s.messages = s.messages[:len(s.messages)-1]
 		return
@@ -360,10 +429,37 @@ func (s *InteractiveSession) handleCommand(input string) bool {
 				if msgCount < 0 {
 					msgCount = 0
 				}
-				fmt.Printf("Resumed conversation from %s (%d messages)\n",
+				fmt.Printf("Resumed conversation from %s (%d messages)\n\n",
 					lastConv.UpdatedAt.Format("2006-01-02 15:04"),
 					msgCount,
 				)
+
+				// Display the conversation history
+				for _, msg := range lastConv.Messages {
+					// Skip system messages
+					if msg.Role == "system" {
+						continue
+					}
+
+					// Display user messages
+					if msg.Role == "user" {
+						fmt.Printf("You:\n%s\n\n", msg.Content)
+					}
+
+					// Display assistant messages
+					if msg.Role == "assistant" && msg.Content != "" {
+						fmt.Printf("Assistant:\n")
+						if s.app.cfg.Render {
+							display.ShowContentRendered(msg.Content)
+						} else {
+							display.ShowContent(msg.Content)
+						}
+						fmt.Println()
+					}
+				}
+
+				fmt.Println("--- End of conversation history ---")
+				fmt.Println()
 			}
 		}
 
@@ -395,6 +491,10 @@ func (s *InteractiveSession) handleCommand(input string) bool {
 
 // sendInteractiveMessage sends a message in interactive mode and returns the response
 func (s *InteractiveSession) sendInteractiveMessage() (string, []string, error) {
+	// Start interruptible context - Ctrl+C will cancel this operation
+	ctx := s.interruptCtx.Start()
+	defer s.interruptCtx.Stop()
+
 	if s.app.cfg.Stream {
 		var fullContent strings.Builder
 		var citations []string
@@ -403,7 +503,7 @@ func (s *InteractiveSession) sendInteractiveMessage() (string, []string, error) 
 		sp := display.NewSpinner("Thinking...")
 		sp.Start()
 
-		err := s.client.QueryStreamWithHistory(s.messages,
+		err := s.client.QueryStreamWithHistoryContext(ctx, s.messages,
 			func(content string) {
 				if firstChunk {
 					firstChunk = false
@@ -444,7 +544,7 @@ func (s *InteractiveSession) sendInteractiveMessage() (string, []string, error) 
 	sp := display.NewSpinner("Thinking...")
 	sp.Start()
 
-	resp, err := s.client.QueryWithHistory(s.messages)
+	resp, err := s.client.QueryWithHistoryContext(ctx, s.messages)
 	sp.Stop()
 
 	if err != nil {
