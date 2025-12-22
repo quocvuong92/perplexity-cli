@@ -26,6 +26,9 @@ const DefaultModel = "sonar-pro"
 // DefaultSystemMessage is the default system prompt
 const DefaultSystemMessage = "Be precise and concise."
 
+// FailedResponsePlaceholder is used when API returns empty response
+const FailedResponsePlaceholder = "I apologize, but I couldn't generate a response."
+
 // DefaultAPIURL is the Perplexity API endpoint
 const DefaultAPIURL = "https://api.perplexity.ai/chat/completions"
 
@@ -45,13 +48,15 @@ type Config struct {
 	APIKey          string   // Current active API key
 	APIKeys         []string // All available API keys
 	CurrentKeyIndex int      // Index of current key in APIKeys
+	startKeyIndex   int      // Starting index for rotation cycle detection (-1 = not tracking)
 	Model           string
 	Timeout         time.Duration // HTTP client timeout
 	Usage           bool
 	Citations       bool
 	Stream          bool
-	Render          bool // Render markdown output with colors/formatting
-	Interactive     bool // Interactive chat mode
+	Render          bool   // Render markdown output with colors/formatting
+	Interactive     bool   // Interactive chat mode
+	OutputFile      string // Output file path for saving response
 }
 
 // ErrAPIKeyNotFound is returned when no API key is available
@@ -127,9 +132,10 @@ func GetAPIKeysFromEnv() []string {
 // NewConfig creates a new Config with defaults
 func NewConfig() *Config {
 	return &Config{
-		APIURL:  DefaultAPIURL,
-		Model:   DefaultModel,
-		Timeout: DefaultTimeout,
+		APIURL:        DefaultAPIURL,
+		Model:         DefaultModel,
+		Timeout:       DefaultTimeout,
+		startKeyIndex: -1,
 	}
 }
 
@@ -171,21 +177,34 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// RotateKey moves to the next available API key
-// Returns the new key or error if no more keys available
+// RotateKey moves to the next available API key, wrapping around to try all keys
+// Returns the new key or error if all keys have been tried
 func (c *Config) RotateKey() (string, error) {
 	if len(c.APIKeys) <= 1 {
 		return "", ErrNoAvailableKeys
 	}
 
-	nextIndex := c.CurrentKeyIndex + 1
-	if nextIndex >= len(c.APIKeys) {
+	// Track starting position to detect full cycle
+	if c.startKeyIndex < 0 {
+		c.startKeyIndex = c.CurrentKeyIndex
+	}
+
+	nextIndex := (c.CurrentKeyIndex + 1) % len(c.APIKeys)
+
+	// If we've cycled back to start, all keys have been tried
+	if nextIndex == c.startKeyIndex {
+		c.startKeyIndex = -1 // Reset for next rotation cycle
 		return "", ErrNoAvailableKeys
 	}
 
 	c.CurrentKeyIndex = nextIndex
 	c.APIKey = c.APIKeys[nextIndex]
 	return c.APIKey, nil
+}
+
+// ResetKeyRotation resets the key rotation tracking (call after successful request)
+func (c *Config) ResetKeyRotation() {
+	c.startKeyIndex = -1
 }
 
 // GetKeyCount returns the total number of configured keys

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/quocvuong92/perplexity-cli/internal/api"
@@ -21,10 +22,12 @@ func (app *App) runNormal(query string) {
 		return
 	}
 
+	content := resp.GetContent()
+
 	if app.cfg.Render {
-		display.ShowContentRendered(resp.GetContent())
+		display.ShowContentRendered(content)
 	} else {
-		display.ShowContent(resp.GetContent())
+		display.ShowContent(content)
 	}
 
 	if app.cfg.Citations && len(resp.Citations) > 0 {
@@ -33,6 +36,15 @@ func (app *App) runNormal(query string) {
 
 	if app.cfg.Usage {
 		display.ShowUsage(resp.GetUsageMap())
+	}
+
+	// Save to file if output flag is set
+	if app.cfg.OutputFile != "" {
+		if err := os.WriteFile(app.cfg.OutputFile, []byte(content), 0644); err != nil {
+			display.ShowError(fmt.Sprintf("Failed to save output: %v", err))
+		} else {
+			fmt.Fprintf(os.Stderr, "Response saved to %s\n", app.cfg.OutputFile)
+		}
 	}
 }
 
@@ -59,10 +71,8 @@ func (app *App) runStream(query string) {
 				}
 			}
 
-			if app.cfg.Render {
-				// Collect content for rendering at the end
-				fullContent.WriteString(content)
-			} else {
+			fullContent.WriteString(content)
+			if !app.cfg.Render {
 				fmt.Print(content)
 			}
 		},
@@ -95,6 +105,15 @@ func (app *App) runStream(query string) {
 		if app.cfg.Usage {
 			fmt.Println()
 			display.ShowUsage(finalResp.GetUsageMap())
+		}
+	}
+
+	// Save to file if output flag is set
+	if app.cfg.OutputFile != "" {
+		if err := os.WriteFile(app.cfg.OutputFile, []byte(fullContent.String()), 0644); err != nil {
+			display.ShowError(fmt.Sprintf("Failed to save output: %v", err))
+		} else {
+			fmt.Fprintf(os.Stderr, "Response saved to %s\n", app.cfg.OutputFile)
 		}
 	}
 }

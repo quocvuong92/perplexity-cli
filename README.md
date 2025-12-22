@@ -12,6 +12,8 @@ A fast and simple command-line client for the Perplexity API with interactive ch
 - **Formatted Output** - Rendered markdown with syntax highlighting
 - **Multiple API Keys** - Automatic rotation on failure or rate limits
 - **Token Statistics** - Optional usage tracking and citations
+- **Pipe Input Support** - Use with shell pipelines
+- **Export Conversations** - Save chats to markdown files
 - **Cross-platform** - macOS, Linux, and Windows support
 
 ## Installation
@@ -32,6 +34,9 @@ export PERPLEXITY_API_KEY="your-api-key"
 
 # Multiple keys (automatic rotation)
 export PERPLEXITY_API_KEYS="key1,key2,key3"
+
+# Optional: custom timeout (default: 120 seconds)
+export PERPLEXITY_TIMEOUT=180
 ```
 
 Add to `~/.bashrc` or `~/.zshrc` for persistence.
@@ -49,6 +54,13 @@ perplexity -sr "Explain relativity"
 
 # Interactive mode
 perplexity -i
+
+# Save response to file
+perplexity -o response.md "Explain Docker"
+
+# Pipe input
+echo "What is Go?" | perplexity
+cat question.txt | perplexity -sr
 ```
 
 ### Options
@@ -61,8 +73,10 @@ perplexity -i
 | `-c, --citations` | Display citations |
 | `-u, --usage` | Show token usage statistics |
 | `-m, --model` | Choose model (default: sonar-pro) |
+| `-o, --output` | Save response to file |
 | `-a, --api-key` | Override API key |
 | `-v, --verbose` | Enable verbose logging |
+| `--list-models` | List available models |
 
 ### Interactive Mode
 
@@ -76,13 +90,19 @@ perplexity -isr
 
 | Command | Description |
 |---------|-------------|
-| `/model [name]`, `/m` | Switch or show model |
+| `/model [name]`, `/m` | Switch or show current model |
 | `/citations [on\|off]` | Toggle citations display |
 | `/history` | Show recent conversations |
-| `/resume` | Resume last conversation |
+| `/search <keyword>` | Search conversation history |
+| `/resume [n]` | Resume conversation (n=index from /history) |
+| `/delete <n>` | Delete conversation (n=index from /history) |
+| `/retry`, `/r` | Retry last message |
+| `/copy` | Copy last response to clipboard |
+| `/export [filename]` | Export conversation to markdown |
+| `/system [prompt\|reset]` | Show/set/reset system prompt |
 | `/clear`, `/c` | Reset conversation |
 | `/help`, `/h` | Display commands |
-| `/exit`, `/q` | Exit session |
+| `/exit`, `/quit`, `/q` | Exit session |
 
 **Tips:**
 - Press `Ctrl+C` during a response to cancel without exiting
@@ -105,6 +125,7 @@ perplexity -isr
 make build          # Current platform
 make build-darwin   # macOS (Universal)
 make build-all      # All platforms
+make test           # Run tests
 ```
 
 ## Requirements

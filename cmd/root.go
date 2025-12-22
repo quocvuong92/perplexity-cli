@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -55,6 +56,7 @@ Output is in markdown format for easy copying.`,
 	rootCmd.Flags().StringVarP(&app.cfg.APIKey, "api-key", "a", "", "API key (defaults to PERPLEXITY_API_KEYS or PERPLEXITY_API_KEY env var)")
 	rootCmd.Flags().StringVarP(&app.cfg.Model, "model", "m", config.DefaultModel,
 		fmt.Sprintf("Model to use. Available: %s", config.GetAvailableModelsString()))
+	rootCmd.Flags().StringVarP(&app.cfg.OutputFile, "output", "o", "", "Save response to file")
 	rootCmd.Flags().BoolVar(&app.listModels, "list-models", false, "List available models")
 
 	if err := rootCmd.Execute(); err != nil {
@@ -94,13 +96,29 @@ func (app *App) run(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// Require query if not interactive mode
-	if len(args) == 0 {
+	// Get query from args or stdin (pipe)
+	var query string
+	if len(args) > 0 {
+		query = args[0]
+	} else {
+		// Check if there's input from pipe
+		stat, _ := os.Stdin.Stat()
+		if (stat.Mode() & os.ModeCharDevice) == 0 {
+			// Data is being piped
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				display.ShowError(fmt.Sprintf("Failed to read from stdin: %v", err))
+				os.Exit(1)
+			}
+			query = strings.TrimSpace(string(data))
+		}
+	}
+
+	// Require query
+	if query == "" {
 		_ = cmd.Help()
 		os.Exit(1)
 	}
-
-	query := args[0]
 	log.Printf("Query: %s", query)
 	log.Printf("Model: %s", app.cfg.Model)
 	log.Printf("Stream: %v", app.cfg.Stream)
