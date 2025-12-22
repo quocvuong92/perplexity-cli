@@ -93,6 +93,11 @@ func (c *Client) SetKeyRotationCallback(callback func(fromIndex, toIndex int, to
 	c.onKeyRotation = callback
 }
 
+// SetBaseURL sets the API URL (useful for testing with mock servers)
+func (c *Client) SetBaseURL(url string) {
+	c.config.APIURL = url
+}
+
 // shouldRotateKey checks if the error indicates we should try another key
 func (c *Client) shouldRotateKey(statusCode int, errorMsg string) bool {
 	// Check status codes that indicate key issues
@@ -147,6 +152,7 @@ func (c *Client) queryWithRetry(ctx context.Context, message string) (*ChatRespo
 	for {
 		resp, err := c.doQuery(ctx, message)
 		if err == nil {
+			c.config.ResetKeyRotation()
 			return resp, nil
 		}
 
@@ -199,6 +205,7 @@ func (c *Client) queryStreamWithRetry(ctx context.Context, message string, onChu
 	for {
 		err := c.doQueryStream(ctx, message, onChunk, onDone)
 		if err == nil {
+			c.config.ResetKeyRotation()
 			return nil
 		}
 
@@ -269,6 +276,7 @@ func (c *Client) queryWithHistoryRetry(ctx context.Context, messages []Message) 
 	for {
 		resp, err := c.doQueryWithHistory(ctx, messages)
 		if err == nil {
+			c.config.ResetKeyRotation()
 			return resp, nil
 		}
 
@@ -358,6 +366,7 @@ func (c *Client) queryStreamWithHistoryRetry(ctx context.Context, messages []Mes
 	for {
 		err := c.doQueryStreamWithHistory(ctx, messages, onChunk, onDone)
 		if err == nil {
+			c.config.ResetKeyRotation()
 			return nil
 		}
 

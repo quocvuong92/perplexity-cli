@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -162,4 +163,38 @@ func (h *History) GetRecentConversations(n int) []ConversationEntry {
 		n = len(h.Conversations)
 	}
 	return h.Conversations[len(h.Conversations)-n:]
+}
+
+// SearchConversations searches for conversations containing the keyword
+func (h *History) SearchConversations(keyword string) []ConversationEntry {
+	if keyword == "" || len(h.Conversations) == 0 {
+		return nil
+	}
+	keyword = strings.ToLower(keyword)
+	var results []ConversationEntry
+	for _, conv := range h.Conversations {
+		for _, msg := range conv.Messages {
+			if strings.Contains(strings.ToLower(msg.Content), keyword) {
+				results = append(results, conv)
+				break
+			}
+		}
+	}
+	return results
+}
+
+// DeleteConversation removes a conversation by index (1-based from recent list)
+func (h *History) DeleteConversation(index int) bool {
+	recent := h.GetRecentConversations(10)
+	if index < 1 || index > len(recent) {
+		return false
+	}
+	targetID := recent[index-1].ID
+	for i := range h.Conversations {
+		if h.Conversations[i].ID == targetID {
+			h.Conversations = append(h.Conversations[:i], h.Conversations[i+1:]...)
+			return true
+		}
+	}
+	return false
 }

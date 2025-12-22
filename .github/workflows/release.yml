@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -33,7 +33,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: "1.24"
 
       - name: Build
         env:
@@ -41,25 +41,25 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: 0
         run: |
-          BINARY_NAME=perplexity
+          BINARY_NAME=perplexity-cli
           if [ "${{ matrix.os }}" = "windows" ]; then
-            BINARY_NAME=perplexity.exe
+            BINARY_NAME=perplexity-cli.exe
           fi
           go build -ldflags="-s -w" -o ${BINARY_NAME} .
 
       - name: Package
         run: |
-          ARCHIVE_NAME=perplexity-${{ github.ref_name }}-${{ matrix.os }}-${{ matrix.arch }}
+          ARCHIVE_NAME=perplexity-cli-${{ github.ref_name }}-${{ matrix.os }}-${{ matrix.arch }}
           if [ "${{ matrix.os }}" = "windows" ]; then
-            zip ${ARCHIVE_NAME}.zip perplexity.exe
+            zip ${ARCHIVE_NAME}.zip perplexity-cli.exe
           else
-            tar -czvf ${ARCHIVE_NAME}.tar.gz perplexity
+            tar -czvf ${ARCHIVE_NAME}.tar.gz perplexity-cli
           fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: perplexity-${{ matrix.os }}-${{ matrix.arch }}
+          name: perplexity-cli-${{ matrix.os }}-${{ matrix.arch }}
           path: |
             *.tar.gz
             *.zip
