@@ -18,7 +18,8 @@ func (app *App) runNormal(query string) {
 	sp.Stop()
 
 	if err != nil {
-		display.ShowError(err.Error())
+		msg, hint := display.FormatNetworkError(err)
+		display.ShowFriendlyError(msg, hint)
 		return
 	}
 
@@ -85,7 +86,8 @@ func (app *App) runStream(query string) {
 	sp.Stop()
 
 	if err != nil {
-		display.ShowError(err.Error())
+		msg, hint := display.FormatNetworkError(err)
+		display.ShowFriendlyError(msg, hint)
 		return
 	}
 
