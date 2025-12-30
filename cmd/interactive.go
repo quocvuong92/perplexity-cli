@@ -16,6 +16,8 @@ import (
 	"github.com/quocvuong92/perplexity-cli/internal/config"
 	"github.com/quocvuong92/perplexity-cli/internal/display"
 	"github.com/quocvuong92/perplexity-cli/internal/history"
+	"github.com/quocvuong92/perplexity-cli/internal/retry"
+	"github.com/quocvuong92/perplexity-cli/internal/validation"
 )
 
 // InterruptibleContext manages a cancellable context for operations.
@@ -78,6 +80,7 @@ type InteractiveSession struct {
 	app            *App
 	client         *api.Client
 	messages       []api.Message
+	messagesMu     sync.RWMutex // Protects messages slice
 	exitFlag       bool
 	inputBuffer    []string
 	history        *history.History
@@ -117,6 +120,10 @@ func (app *App) runInteractive() {
 
 	session.client.SetKeyRotationCallback(func(fromIndex, toIndex int, totalKeys int) {
 		display.ShowKeyRotation(fromIndex, toIndex, totalKeys)
+	})
+
+	session.client.SetRetryCallback(func(info retry.RetryInfo) {
+		display.ShowRetry(info.Attempt+1, info.MaxRetries, info.NextBackoff)
 	})
 
 	p := prompt.New(
@@ -170,14 +177,19 @@ func (s *InteractiveSession) saveHistory() {
 	if s.history == nil {
 		return
 	}
-	if len(s.messages) > 1 {
-		historyMessages := make([]history.Message, len(s.messages))
+
+	s.messagesMu.RLock()
+	msgCount := len(s.messages)
+	if msgCount > 1 {
+		historyMessages := make([]history.Message, msgCount)
 		for i, msg := range s.messages {
 			historyMessages[i] = history.Message{
 				Role:    msg.Role,
 				Content: msg.Content,
 			}
 		}
+		s.messagesMu.RUnlock()
+
 		if !s.history.UpdateConversation(s.conversationID, historyMessages) {
 			s.history.AddConversation(
 				s.conversationID,
@@ -188,7 +200,48 @@ func (s *InteractiveSession) saveHistory() {
 		if err := s.history.Save(); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: Could not save history: %v\n", err)
 		}
+	} else {
+		s.messagesMu.RUnlock()
 	}
+}
+
+// appendMessage safely appends a message to the messages slice
+func (s *InteractiveSession) appendMessage(msg api.Message) {
+	s.messagesMu.Lock()
+	s.messages = append(s.messages, msg)
+	s.messagesMu.Unlock()
+}
+
+// removeLastMessage safely removes the last message from the messages slice
+func (s *InteractiveSession) removeLastMessage() {
+	s.messagesMu.Lock()
+	if len(s.messages) > 0 {
+		s.messages = s.messages[:len(s.messages)-1]
+	}
+	s.messagesMu.Unlock()
+}
+
+// getMessages returns a copy of the messages slice for safe iteration
+func (s *InteractiveSession) getMessages() []api.Message {
+	s.messagesMu.RLock()
+	defer s.messagesMu.RUnlock()
+	msgs := make([]api.Message, len(s.messages))
+	copy(msgs, s.messages)
+	return msgs
+}
+
+// getMessageCount returns the current message count
+func (s *InteractiveSession) getMessageCount() int {
+	s.messagesMu.RLock()
+	defer s.messagesMu.RUnlock()
+	return len(s.messages)
+}
+
+// setMessages safely replaces the entire messages slice
+func (s *InteractiveSession) setMessages(msgs []api.Message) {
+	s.messagesMu.Lock()
+	s.messages = msgs
+	s.messagesMu.Unlock()
 }
 
 // executor handles the execution of each input line
@@ -224,19 +277,29 @@ func (s *InteractiveSession) executor(input string) {
 		return
 	}
 
+	// Validate and sanitize the input
+	input = validation.SanitizePrompt(input)
+	result := validation.ValidatePrompt(input)
+	if !result.Valid {
+		display.ShowError(result.Error.Error())
+		return
+	}
+	input = result.Cleaned
+
 	// Regular chat
 	s.lastUserInput = input
-	s.messages = append(s.messages, api.Message{Role: "user", Content: input})
+	s.appendMessage(api.Message{Role: "user", Content: input})
 	fmt.Println()
 
 	response, citations, err := s.sendInteractiveMessage()
 	if err != nil {
 		if err == context.Canceled {
-			s.messages = s.messages[:len(s.messages)-1]
+			s.removeLastMessage()
 			return
 		}
-		display.ShowError(err.Error())
-		s.messages = s.messages[:len(s.messages)-1]
+		msg, hint := display.FormatNetworkError(err)
+		display.ShowFriendlyError(msg, hint)
+		s.removeLastMessage()
 		return
 	}
 
@@ -244,7 +307,7 @@ func (s *InteractiveSession) executor(input string) {
 		response = config.FailedResponsePlaceholder
 	}
 	s.lastResponse = response
-	s.messages = append(s.messages, api.Message{Role: "assistant", Content: response})
+	s.appendMessage(api.Message{Role: "assistant", Content: response})
 
 	if s.app.cfg.Citations && len(citations) > 0 {
 		fmt.Println()
@@ -258,6 +321,9 @@ func (s *InteractiveSession) sendInteractiveMessage() (string, []string, error) 
 	ctx := s.interruptCtx.Start()
 	defer s.interruptCtx.Stop()
 
+	// Get a copy of messages for thread-safe access
+	messages := s.getMessages()
+
 	if s.app.cfg.Stream {
 		var fullContent strings.Builder
 		var citations []string
@@ -266,7 +332,7 @@ func (s *InteractiveSession) sendInteractiveMessage() (string, []string, error) 
 		sp := display.NewSpinner("Thinking...")
 		sp.Start()
 
-		err := s.client.QueryStreamWithHistoryContext(ctx, s.messages,
+		err := s.client.QueryStreamWithHistoryContext(ctx, messages,
 			func(content string) {
 				if firstChunk {
 					firstChunk = false
@@ -306,7 +372,7 @@ func (s *InteractiveSession) sendInteractiveMessage() (string, []string, error) 
 	sp := display.NewSpinner("Thinking...")
 	sp.Start()
 
-	resp, err := s.client.QueryWithHistoryContext(ctx, s.messages)
+	resp, err := s.client.QueryWithHistoryContext(ctx, messages)
 	sp.Stop()
 
 	if err != nil {

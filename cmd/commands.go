@@ -63,9 +63,9 @@ func (s *InteractiveSession) cmdExit() bool {
 }
 
 func (s *InteractiveSession) cmdClear() bool {
-	s.messages = []api.Message{
+	s.setMessages([]api.Message{
 		{Role: "system", Content: config.DefaultSystemMessage},
-	}
+	})
 	s.conversationID = uuid.New().String()
 	s.lastUserInput = ""
 	s.lastResponse = ""
@@ -80,6 +80,7 @@ func (s *InteractiveSession) cmdRetry() bool {
 	}
 
 	// Remove the last assistant response if it exists
+	s.messagesMu.Lock()
 	if len(s.messages) > 0 && s.messages[len(s.messages)-1].Role == "assistant" {
 		s.messages = s.messages[:len(s.messages)-1]
 	}
@@ -87,20 +88,22 @@ func (s *InteractiveSession) cmdRetry() bool {
 	if len(s.messages) > 0 && s.messages[len(s.messages)-1].Role == "user" {
 		s.messages = s.messages[:len(s.messages)-1]
 	}
+	s.messagesMu.Unlock()
 
 	// Resend the last user input
 	fmt.Printf("Retrying: %s\n", s.lastUserInput)
-	s.messages = append(s.messages, api.Message{Role: "user", Content: s.lastUserInput})
+	s.appendMessage(api.Message{Role: "user", Content: s.lastUserInput})
 	fmt.Println()
 
 	response, citations, err := s.sendInteractiveMessage()
 	if err != nil {
 		if err == context.Canceled {
-			s.messages = s.messages[:len(s.messages)-1]
+			s.removeLastMessage()
 			return false
 		}
-		display.ShowError(err.Error())
-		s.messages = s.messages[:len(s.messages)-1]
+		msg, hint := display.FormatNetworkError(err)
+		display.ShowFriendlyError(msg, hint)
+		s.removeLastMessage()
 		return false
 	}
 
@@ -108,7 +111,7 @@ func (s *InteractiveSession) cmdRetry() bool {
 		response = config.FailedResponsePlaceholder
 	}
 	s.lastResponse = response
-	s.messages = append(s.messages, api.Message{Role: "assistant", Content: response})
+	s.appendMessage(api.Message{Role: "assistant", Content: response})
 
 	if s.app.cfg.Citations && len(citations) > 0 {
 		fmt.Println()
@@ -119,7 +122,8 @@ func (s *InteractiveSession) cmdRetry() bool {
 }
 
 func (s *InteractiveSession) cmdExport(parts []string) bool {
-	if len(s.messages) <= 1 {
+	messages := s.getMessages()
+	if len(messages) <= 1 {
 		fmt.Println("No conversation to export.")
 		return false
 	}
@@ -138,7 +142,7 @@ func (s *InteractiveSession) cmdExport(parts []string) bool {
 	content.WriteString(fmt.Sprintf("**Model:** %s\n\n", s.app.cfg.Model))
 	content.WriteString("---\n\n")
 
-	for _, msg := range s.messages {
+	for _, msg := range messages {
 		if msg.Role == "system" {
 			continue
 		}
@@ -305,22 +309,28 @@ func (s *InteractiveSession) cmdSystem(parts []string) bool {
 		if newPrompt == "" {
 			fmt.Println("Usage: /system <prompt> or /system to show current")
 		} else if newPrompt == "reset" {
+			s.messagesMu.Lock()
 			if len(s.messages) > 0 && s.messages[0].Role == "system" {
 				s.messages[0].Content = config.DefaultSystemMessage
 			}
+			s.messagesMu.Unlock()
 			fmt.Println("System prompt reset to default.")
 		} else {
+			s.messagesMu.Lock()
 			if len(s.messages) > 0 && s.messages[0].Role == "system" {
 				s.messages[0].Content = newPrompt
 			}
+			s.messagesMu.Unlock()
 			fmt.Println("System prompt updated.")
 		}
 	} else {
+		s.messagesMu.RLock()
 		if len(s.messages) > 0 && s.messages[0].Role == "system" {
 			fmt.Printf("Current system prompt: %s\n", s.messages[0].Content)
 		} else {
 			fmt.Println("No system prompt set.")
 		}
+		s.messagesMu.RUnlock()
 	}
 	return false
 }
@@ -366,19 +376,20 @@ func (s *InteractiveSession) cmdResume(parts []string) bool {
 	}
 
 	// Convert history.Message to api.Message, filtering out failed responses
-	s.messages = make([]api.Message, 0, len(conv.Messages))
+	newMessages := make([]api.Message, 0, len(conv.Messages))
 	for i, msg := range conv.Messages {
 		if msg.Role == "assistant" && msg.Content == config.FailedResponsePlaceholder {
-			if len(s.messages) > 0 && s.messages[len(s.messages)-1].Role == "user" {
-				s.messages = s.messages[:len(s.messages)-1]
+			if len(newMessages) > 0 && newMessages[len(newMessages)-1].Role == "user" {
+				newMessages = newMessages[:len(newMessages)-1]
 			}
 			continue
 		}
-		s.messages = append(s.messages, api.Message{
+		newMessages = append(newMessages, api.Message{
 			Role:    msg.Role,
 			Content: conv.Messages[i].Content,
 		})
 	}
+	s.setMessages(newMessages)
 
 	s.conversationID = conv.ID
 	msgCount := len(conv.Messages) - 1
@@ -391,7 +402,8 @@ func (s *InteractiveSession) cmdResume(parts []string) bool {
 	)
 
 	// Display the conversation history
-	for _, msg := range s.messages {
+	messages := s.getMessages()
+	for _, msg := range messages {
 		if msg.Role == "system" {
 			continue
 		}

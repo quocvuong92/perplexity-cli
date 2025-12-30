@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/quocvuong92/perplexity-cli/internal/config"
+	"github.com/quocvuong92/perplexity-cli/internal/retry"
 )
 
 // Message represents a chat message
@@ -67,6 +68,7 @@ type APIError struct {
 	Message    string
 }
 
+// Error implements the error interface
 func (e *APIError) Error() string {
 	return e.Message
 }
@@ -75,7 +77,9 @@ func (e *APIError) Error() string {
 type Client struct {
 	httpClient    *http.Client
 	config        *config.Config
+	retryConfig   retry.Config
 	onKeyRotation func(fromIndex, toIndex int, totalKeys int) // Callback when key is rotated
+	onRetry       func(info retry.RetryInfo)                  // Callback when retrying
 }
 
 // NewClient creates a new API client
@@ -84,13 +88,24 @@ func NewClient(cfg *config.Config) *Client {
 		httpClient: &http.Client{
 			Timeout: cfg.Timeout,
 		},
-		config: cfg,
+		config:      cfg,
+		retryConfig: retry.DefaultConfig(),
 	}
 }
 
 // SetKeyRotationCallback sets a callback function to be called when key rotation occurs
 func (c *Client) SetKeyRotationCallback(callback func(fromIndex, toIndex int, totalKeys int)) {
 	c.onKeyRotation = callback
+}
+
+// SetRetryCallback sets a callback function to be called before each retry attempt
+func (c *Client) SetRetryCallback(callback func(info retry.RetryInfo)) {
+	c.onRetry = callback
+}
+
+// SetRetryConfig sets the retry configuration
+func (c *Client) SetRetryConfig(cfg retry.Config) {
+	c.retryConfig = cfg
 }
 
 // SetBaseURL sets the API URL (useful for testing with mock servers)
@@ -308,44 +323,55 @@ func (c *Client) doQueryWithHistory(ctx context.Context, messages []Message) (*C
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.APIURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
+	var chatResp *ChatResponse
 
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		var errResp ErrorResponse
-		errMsg := fmt.Sprintf("status code %d", resp.StatusCode)
-		if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.Message != "" {
-			errMsg = errResp.Error.Message
+	err = retry.Do(ctx, c.retryConfig, func() error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.APIURL, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
 		}
-		return nil, &APIError{
-			StatusCode: resp.StatusCode,
-			Message:    fmt.Sprintf("API error: %s", errMsg),
+
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to send request: %w", err)
 		}
+		defer func() { _ = resp.Body.Close() }()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			var errResp ErrorResponse
+			errMsg := fmt.Sprintf("status code %d", resp.StatusCode)
+			if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.Message != "" {
+				errMsg = errResp.Error.Message
+			}
+			return &APIError{
+				StatusCode: resp.StatusCode,
+				Message:    fmt.Sprintf("API error: %s", errMsg),
+			}
+		}
+
+		var parsed ChatResponse
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		chatResp = &parsed
+		return nil
+	}, c.onRetry)
+
+	if err != nil {
+		return nil, err
 	}
 
-	var chatResp ChatResponse
-	if err := json.Unmarshal(body, &chatResp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	return &chatResp, nil
+	return chatResp, nil
 }
 
 // QueryStreamWithHistory sends a streaming query with message history (for interactive mode)
@@ -398,33 +424,44 @@ func (c *Client) doQueryStreamWithHistory(ctx context.Context, messages []Messag
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.APIURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
+	// Use retry logic for the initial connection
+	var resp *http.Response
+	err = retry.Do(ctx, c.retryConfig, func() error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.APIURL, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
 
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
 
-	resp, err := c.httpClient.Do(req)
+		resp, err = c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to send request: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			var errResp ErrorResponse
+			errMsg := fmt.Sprintf("status code %d", resp.StatusCode)
+			if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.Message != "" {
+				errMsg = errResp.Error.Message
+			}
+			return &APIError{
+				StatusCode: resp.StatusCode,
+				Message:    fmt.Sprintf("API error: %s", errMsg),
+			}
+		}
+
+		return nil
+	}, c.onRetry)
+
 	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		var errResp ErrorResponse
-		errMsg := fmt.Sprintf("status code %d", resp.StatusCode)
-		if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.Message != "" {
-			errMsg = errResp.Error.Message
-		}
-		return &APIError{
-			StatusCode: resp.StatusCode,
-			Message:    fmt.Sprintf("API error: %s", errMsg),
-		}
-	}
 
 	var finalResp *ChatResponse
 	reader := bufio.NewReader(resp.Body)

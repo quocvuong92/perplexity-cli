@@ -146,23 +146,27 @@ func TestConfigValidate(t *testing.T) {
 		os.Setenv(EnvTimeout, origTimeout)
 	}()
 
+	// Use valid-length test keys (minimum 20 characters)
+	validTestKey := "pplx-test-key-123456789"
+	validEnvKey := "pplx-env-key-1234567890"
+
 	t.Run("valid config with API key flag", func(t *testing.T) {
 		os.Setenv(EnvAPIKeys, "")
 		os.Setenv(EnvAPIKey, "")
 
 		cfg := NewConfig()
-		cfg.APIKey = "test-key"
+		cfg.APIKey = validTestKey
 
 		if err := cfg.Validate(); err != nil {
 			t.Errorf("Validate() error = %v, want nil", err)
 		}
-		if len(cfg.APIKeys) != 1 || cfg.APIKeys[0] != "test-key" {
+		if len(cfg.APIKeys) != 1 || cfg.APIKeys[0] != validTestKey {
 			t.Error("APIKeys not set correctly from flag")
 		}
 	})
 
 	t.Run("valid config from env", func(t *testing.T) {
-		os.Setenv(EnvAPIKeys, "env-key")
+		os.Setenv(EnvAPIKeys, validEnvKey)
 		os.Setenv(EnvAPIKey, "")
 
 		cfg := NewConfig()
@@ -182,7 +186,7 @@ func TestConfigValidate(t *testing.T) {
 	})
 
 	t.Run("invalid model", func(t *testing.T) {
-		os.Setenv(EnvAPIKeys, "test-key")
+		os.Setenv(EnvAPIKeys, validTestKey)
 
 		cfg := NewConfig()
 		cfg.Model = "invalid-model"
@@ -194,7 +198,7 @@ func TestConfigValidate(t *testing.T) {
 	})
 
 	t.Run("timeout from env", func(t *testing.T) {
-		os.Setenv(EnvAPIKeys, "test-key")
+		os.Setenv(EnvAPIKeys, validTestKey)
 		os.Setenv(EnvTimeout, "60")
 
 		cfg := NewConfig()
@@ -203,6 +207,19 @@ func TestConfigValidate(t *testing.T) {
 		}
 		if cfg.Timeout != 60*time.Second {
 			t.Errorf("Timeout = %v, want 60s", cfg.Timeout)
+		}
+	})
+
+	t.Run("invalid API key format", func(t *testing.T) {
+		os.Setenv(EnvAPIKeys, "")
+		os.Setenv(EnvAPIKey, "")
+
+		cfg := NewConfig()
+		cfg.APIKey = "short"
+
+		err := cfg.Validate()
+		if err == nil {
+			t.Error("Validate() should return error for short API key")
 		}
 	})
 }

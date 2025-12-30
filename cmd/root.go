@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
 
@@ -12,6 +11,9 @@ import (
 	"github.com/quocvuong92/perplexity-cli/internal/api"
 	"github.com/quocvuong92/perplexity-cli/internal/config"
 	"github.com/quocvuong92/perplexity-cli/internal/display"
+	"github.com/quocvuong92/perplexity-cli/internal/logging"
+	"github.com/quocvuong92/perplexity-cli/internal/retry"
+	"github.com/quocvuong92/perplexity-cli/internal/validation"
 )
 
 // App holds the application state
@@ -65,11 +67,17 @@ Output is in markdown format for easy copying.`,
 }
 
 func (app *App) run(cmd *cobra.Command, args []string) {
+	// Initialize structured logging
 	if app.verbose {
-		log.SetOutput(os.Stderr)
-		log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+		logging.Init(logging.Config{
+			Level:   logging.LevelDebug,
+			Output:  os.Stderr,
+			Verbose: true,
+		})
 	} else {
-		log.SetOutput(io.Discard)
+		logging.Init(logging.Config{
+			Output: io.Discard,
+		})
 	}
 
 	// Handle --list-models flag (doesn't require API key)
@@ -86,7 +94,7 @@ func (app *App) run(cmd *cobra.Command, args []string) {
 	// Initialize markdown renderer if render flag is set
 	if app.cfg.Render {
 		if err := display.InitRenderer(); err != nil {
-			log.Printf("Failed to initialize renderer: %v", err)
+			logging.Warn("Failed to initialize renderer", logging.Err(err))
 		}
 	}
 
@@ -119,9 +127,21 @@ func (app *App) run(cmd *cobra.Command, args []string) {
 		_ = cmd.Help()
 		os.Exit(1)
 	}
-	log.Printf("Query: %s", query)
-	log.Printf("Model: %s", app.cfg.Model)
-	log.Printf("Stream: %v", app.cfg.Stream)
+
+	// Validate and sanitize the query
+	query = validation.SanitizePrompt(query)
+	result := validation.ValidatePrompt(query)
+	if !result.Valid {
+		display.ShowError(result.Error.Error())
+		os.Exit(1)
+	}
+	query = result.Cleaned
+
+	logging.Debug("Processing query",
+		logging.String("query", query),
+		logging.String("model", app.cfg.Model),
+		logging.Bool("stream", app.cfg.Stream),
+	)
 
 	app.client = api.NewClient(app.cfg)
 
@@ -130,7 +150,12 @@ func (app *App) run(cmd *cobra.Command, args []string) {
 		display.ShowKeyRotation(fromIndex, toIndex, totalKeys)
 	})
 
-	log.Printf("Sending request to API...")
+	// Set up retry callback to notify user of network retries
+	app.client.SetRetryCallback(func(info retry.RetryInfo) {
+		display.ShowRetry(info.Attempt+1, info.MaxRetries, info.NextBackoff)
+	})
+
+	logging.Debug("Sending request to API")
 
 	if app.cfg.Stream {
 		app.runStream(query)

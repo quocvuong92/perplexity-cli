@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/quocvuong92/perplexity-cli/internal/validation"
 )
 
 // AvailableModels lists all supported Perplexity models
@@ -152,6 +154,11 @@ func (c *Config) Validate() error {
 
 	// If API key is provided via flag, use it directly (single key mode)
 	if c.APIKey != "" {
+		// Validate the API key format
+		result := validation.ValidateAPIKey(c.APIKey)
+		if !result.Valid {
+			return fmt.Errorf("invalid API key: %w", result.Error)
+		}
 		c.APIKeys = []string{c.APIKey}
 		c.CurrentKeyIndex = 0
 		if !ValidateModel(c.Model) {
@@ -164,6 +171,14 @@ func (c *Config) Validate() error {
 	c.APIKeys = GetAPIKeysFromEnv()
 	if len(c.APIKeys) == 0 {
 		return ErrAPIKeyNotFound
+	}
+
+	// Validate all API keys
+	for i, key := range c.APIKeys {
+		result := validation.ValidateAPIKey(key)
+		if !result.Valid {
+			return fmt.Errorf("invalid API key %d: %w", i+1, result.Error)
+		}
 	}
 
 	// Random starting key for load balancing across multiple keys
