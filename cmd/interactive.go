@@ -20,6 +20,31 @@ import (
 	"github.com/quocvuong92/perplexity-cli/internal/validation"
 )
 
+// ANSI color codes for banner
+const (
+	colorReset  = "\033[0m"
+	colorCyan   = "\033[36m"
+	colorBlue   = "\033[34m"
+	colorPurple = "\033[35m"
+	colorBold   = "\033[1m"
+	colorDim    = "\033[2m"
+)
+
+// showBanner displays the ASCII art banner for interactive mode
+func showBanner(model string) {
+	fmt.Println()
+	fmt.Printf("        %s%s██████╗ ███████╗██████╗ ██████╗ ██╗     ███████╗██╗  ██╗██╗████████╗██╗   ██╗%s\n", colorBold, colorCyan, colorReset)
+	fmt.Printf("        %s%s██╔══██╗██╔════╝██╔══██╗██╔══██╗██║     ██╔════╝╚██╗██╔╝██║╚══██╔══╝╚██╗ ██╔╝%s\n", colorBold, colorCyan, colorReset)
+	fmt.Printf("        %s%s██████╔╝█████╗  ██████╔╝██████╔╝██║     █████╗   ╚███╔╝ ██║   ██║    ╚████╔╝%s\n", colorBold, colorBlue, colorReset)
+	fmt.Printf("        %s%s██╔═══╝ ██╔══╝  ██╔══██╗██╔═══╝ ██║     ██╔══╝   ██╔██╗ ██║   ██║     ╚██╔╝%s\n", colorBold, colorBlue, colorReset)
+	fmt.Printf("        %s%s██║     ███████╗██║  ██║██║     ███████╗███████╗██╔╝ ██╗██║   ██║      ██║%s\n", colorBold, colorPurple, colorReset)
+	fmt.Printf("        %s%s╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝     ╚══════╝╚══════╝╚═╝  ╚═╝╚═╝   ╚═╝      ╚═╝%s\n", colorBold, colorPurple, colorReset)
+	fmt.Println()
+	fmt.Printf("%s                                    Model: %s%s\n", colorDim, model, colorReset)
+	fmt.Printf("%s                        Type /help for commands, Ctrl+D to quit%s\n", colorDim, colorReset)
+	fmt.Println()
+}
+
 // InterruptibleContext manages a cancellable context for operations.
 // It allows Ctrl+C to cancel the current operation instead of exiting the CLI.
 type InterruptibleContext struct {
@@ -51,7 +76,7 @@ func (ic *InterruptibleContext) Start() context.Context {
 		case <-sigChan:
 			ic.mu.Lock()
 			if ic.active {
-				fmt.Fprintf(os.Stderr, "\n⚠️  Operation cancelled\n")
+				fmt.Fprintf(os.Stderr, "\nOperation cancelled\n")
 				ic.cancel()
 			}
 			ic.mu.Unlock()
@@ -92,12 +117,7 @@ type InteractiveSession struct {
 
 // runInteractive starts the interactive chat mode
 func (app *App) runInteractive() {
-	fmt.Println("Perplexity CLI - Interactive Mode")
-	fmt.Printf("Model: %s\n", app.cfg.Model)
-	fmt.Println("Type /help for commands, Ctrl+C or Ctrl+D to quit")
-	fmt.Println("Commands auto-complete as you type")
-	fmt.Println("End a line with \\ for multiline input")
-	fmt.Println()
+	showBanner(app.cfg.Model)
 
 	hist := history.NewHistory()
 	if err := hist.Load(); err != nil {
@@ -299,7 +319,11 @@ func (s *InteractiveSession) executor(input string) {
 		}
 		msg, hint := display.FormatNetworkError(err)
 		display.ShowFriendlyError(msg, hint)
-		s.removeLastMessage()
+
+		// On network error, we keep the user message but add a placeholder response
+		// so that roles continue to alternate for future requests/retries.
+		s.lastResponse = config.FailedResponsePlaceholder
+		s.appendMessage(api.Message{Role: "assistant", Content: s.lastResponse})
 		return
 	}
 
@@ -336,16 +360,10 @@ func (s *InteractiveSession) sendInteractiveMessage() (string, []string, error) 
 			func(content string) {
 				if firstChunk {
 					firstChunk = false
-					if s.app.cfg.Render {
-						sp.UpdateMessage("Receiving...")
-					} else {
-						sp.Stop()
-					}
+					sp.Stop()
 				}
 				fullContent.WriteString(content)
-				if !s.app.cfg.Render {
-					fmt.Print(content)
-				}
+				fmt.Print(content)
 			},
 			func(resp *api.ChatResponse) {
 				if resp != nil {
@@ -354,13 +372,12 @@ func (s *InteractiveSession) sendInteractiveMessage() (string, []string, error) 
 			},
 		)
 
-		sp.Stop()
-
 		if err != nil {
 			return "", nil, err
 		}
 
 		if s.app.cfg.Render {
+			fmt.Println("\n---")
 			display.ShowContentRendered(fullContent.String())
 			return fullContent.String(), citations, nil
 		}
