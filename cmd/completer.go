@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"strings"
+
 	"github.com/elk-language/go-prompt"
 	istrings "github.com/elk-language/go-prompt/strings"
 
@@ -20,10 +22,10 @@ func (s *InteractiveSession) completer(d prompt.Document) ([]prompt.Suggest, ist
 		return []prompt.Suggest{}, startIndex, endIndex
 	}
 
-	textLower := toLower(text)
+	textLower := strings.ToLower(text)
 
 	// /model <name> - suggest available models
-	if hasPrefix(textLower, "/model ") || hasPrefix(textLower, "/m ") {
+	if strings.HasPrefix(textLower, "/model ") || strings.HasPrefix(textLower, "/m ") {
 		var suggestions []prompt.Suggest
 		for _, model := range config.AvailableModels {
 			desc := ""
@@ -36,7 +38,7 @@ func (s *InteractiveSession) completer(d prompt.Document) ([]prompt.Suggest, ist
 	}
 
 	// /citations - suggest on/off options
-	if hasPrefix(textLower, "/citations ") {
+	if strings.HasPrefix(textLower, "/citations ") {
 		suggestions := []prompt.Suggest{
 			{Text: "on", Description: "Enable citations display"},
 			{Text: "off", Description: "Disable citations display"},
@@ -45,7 +47,7 @@ func (s *InteractiveSession) completer(d prompt.Document) ([]prompt.Suggest, ist
 	}
 
 	// /system - suggest reset option
-	if hasPrefix(textLower, "/system ") {
+	if strings.HasPrefix(textLower, "/system ") {
 		suggestions := []prompt.Suggest{
 			{Text: "reset", Description: "Reset to default system prompt"},
 		}
@@ -86,21 +88,4 @@ func (s *InteractiveSession) completer(d prompt.Document) ([]prompt.Suggest, ist
 	}
 
 	return prompt.FilterHasPrefix(suggestions, w, true), startIndex, endIndex
-}
-
-// Helper functions to avoid strings import in this file
-func toLower(s string) string {
-	result := make([]byte, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 'a' - 'A'
-		}
-		result[i] = c
-	}
-	return string(result)
-}
-
-func hasPrefix(s, prefix string) bool {
-	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }

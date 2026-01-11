@@ -11,6 +11,7 @@ import (
 var (
 	logger     *slog.Logger
 	loggerOnce sync.Once
+	getOnce    sync.Once
 )
 
 // Level represents the logging level
@@ -72,9 +73,11 @@ func InitDiscardLogger() {
 
 // Get returns the global logger, initializing with defaults if needed
 func Get() *slog.Logger {
-	if logger == nil {
-		Init(DefaultConfig())
-	}
+	getOnce.Do(func() {
+		if logger == nil {
+			Init(DefaultConfig())
+		}
+	})
 	return logger
 }
 

@@ -15,6 +15,8 @@ const (
 	HistoryFileName = "conversation-history.json"
 	// MaxHistoryEntries limits the number of conversations stored
 	MaxHistoryEntries = 50
+	// EnvHistoryPath is the environment variable for custom history path
+	EnvHistoryPath = "PERPLEXITY_HISTORY_PATH"
 )
 
 // Message represents a chat message for history storage.
@@ -49,6 +51,9 @@ func NewHistory() *History {
 
 // getHistoryPath returns the path to the history file
 func getHistoryPath() string {
+	if customPath := os.Getenv(EnvHistoryPath); customPath != "" {
+		return customPath
+	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return ""

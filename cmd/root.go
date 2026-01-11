@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -15,6 +18,8 @@ import (
 	"github.com/quocvuong92/perplexity-cli/internal/retry"
 	"github.com/quocvuong92/perplexity-cli/internal/validation"
 )
+
+var Version = "dev"
 
 // App holds the application state
 type App struct {
@@ -60,6 +65,7 @@ Output is in markdown format for easy copying.`,
 		fmt.Sprintf("Model to use. Available: %s", config.GetAvailableModelsString()))
 	rootCmd.Flags().StringVarP(&app.cfg.OutputFile, "output", "o", "", "Save response to file")
 	rootCmd.Flags().BoolVar(&app.listModels, "list-models", false, "List available models")
+	rootCmd.Version = Version
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -157,9 +163,20 @@ func (app *App) run(cmd *cobra.Command, args []string) {
 
 	logging.Debug("Sending request to API")
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Fprintln(os.Stderr, "\nInterrupted")
+		cancel()
+	}()
+
 	if app.cfg.Stream {
-		app.runStream(query)
+		app.runStream(ctx, query)
 	} else {
-		app.runNormal(query)
+		app.runNormal(ctx, query)
 	}
 }

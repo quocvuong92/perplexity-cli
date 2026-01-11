@@ -1,5 +1,6 @@
 # Go binary
 perplexity
+perplexity-test
 build/
 
 # Go specific

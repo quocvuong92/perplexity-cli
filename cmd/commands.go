@@ -157,8 +157,8 @@ func (s *InteractiveSession) cmdExport(parts []string) bool {
 		}
 	}
 
-	if err := os.WriteFile(filename, []byte(content.String()), 0644); err != nil {
-		fmt.Printf("Error exporting conversation: %v\n", err)
+	if err := os.WriteFile(filename, []byte(content.String()), 0600); err != nil {
+		display.ShowError(fmt.Sprintf("Failed to export conversation: %v", err))
 	} else {
 		fmt.Printf("Conversation exported to %s\n", filename)
 	}
@@ -287,18 +287,18 @@ func (s *InteractiveSession) cmdDelete(parts []string) bool {
 	indexStr := strings.TrimSpace(parts[1])
 	index := 0
 	if _, err := fmt.Sscanf(indexStr, "%d", &index); err != nil {
-		fmt.Printf("Invalid index: %s\n", indexStr)
+		display.ShowError(fmt.Sprintf("Invalid index: %s", indexStr))
 		return false
 	}
 
 	if s.history.DeleteConversation(index) {
 		if err := s.history.Save(); err != nil {
-			fmt.Printf("Error saving history: %v\n", err)
+			display.ShowError(fmt.Sprintf("Failed to save history: %v", err))
 		} else {
 			fmt.Printf("Conversation %d deleted.\n", index)
 		}
 	} else {
-		fmt.Printf("Invalid conversation index: %d\n", index)
+		display.ShowError(fmt.Sprintf("Invalid conversation index: %d", index))
 	}
 	return false
 }
@@ -342,7 +342,7 @@ func (s *InteractiveSession) cmdCopy() bool {
 	}
 
 	if err := copyToClipboard(s.lastResponse); err != nil {
-		fmt.Printf("Error copying to clipboard: %v\n", err)
+		display.ShowError(fmt.Sprintf("Failed to copy to clipboard: %v", err))
 	} else {
 		fmt.Println("Response copied to clipboard.")
 	}

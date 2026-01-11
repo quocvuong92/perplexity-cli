@@ -1,10 +1,9 @@
 package cmd
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -90,7 +89,7 @@ func TestRunNormal(t *testing.T) {
 	app.client.SetBaseURL(server.URL)
 
 	output := captureOutput(func() {
-		app.runNormal("test query")
+		app.runNormal(context.Background(), "test query")
 	})
 
 	if !strings.Contains(output, "This is a test response") {
@@ -128,7 +127,7 @@ func TestRunNormalWithOutputFile(t *testing.T) {
 	app.client.SetBaseURL(server.URL)
 
 	captureOutput(func() {
-		app.runNormal("test query")
+		app.runNormal(context.Background(), "test query")
 	})
 
 	content, err := os.ReadFile(tempFile)
@@ -167,10 +166,9 @@ func TestRunNormalWithRender(t *testing.T) {
 	app.client.SetBaseURL(server.URL)
 
 	output := captureOutput(func() {
-		app.runNormal("test query")
+		app.runNormal(context.Background(), "test query")
 	})
 
-	// Should produce some output (rendered)
 	if output == "" {
 		t.Error("Should produce rendered output")
 	}
@@ -204,7 +202,7 @@ func TestRunStream(t *testing.T) {
 	app.client.SetBaseURL(server.URL)
 
 	output := captureOutput(func() {
-		app.runStream("test query")
+		app.runStream(context.Background(), "test query")
 	})
 
 	if !strings.Contains(output, "Hello") {
@@ -234,7 +232,7 @@ func TestRunStreamWithOutputFile(t *testing.T) {
 	app.client.SetBaseURL(server.URL)
 
 	captureOutput(func() {
-		app.runStream("test query")
+		app.runStream(context.Background(), "test query")
 	})
 
 	content, err := os.ReadFile(tempFile)
@@ -265,10 +263,9 @@ func TestRunStreamWithRender(t *testing.T) {
 	app.client.SetBaseURL(server.URL)
 
 	output := captureOutput(func() {
-		app.runStream("test query")
+		app.runStream(context.Background(), "test query")
 	})
 
-	// Should produce some output (rendered)
 	if output == "" {
 		t.Error("Should produce rendered output")
 	}
@@ -291,25 +288,12 @@ func TestRunNormalError(t *testing.T) {
 	app.client = api.NewClient(cfg)
 	app.client.SetBaseURL(server.URL)
 
-	// Capture stderr for error output
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
-	captureOutput(func() {
-		app.runNormal("test query")
+	output := captureOutput(func() {
+		app.runNormal(context.Background(), "test query")
 	})
 
-	w.Close()
-	os.Stderr = oldStderr
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	stderrOutput := buf.String()
-
-	// Error should be printed to stderr
-	if !strings.Contains(stderrOutput, "Error") && !strings.Contains(stderrOutput, "error") {
-		t.Errorf("Should show error message in stderr, got: %s", stderrOutput)
+	if !strings.Contains(output, "Error") && !strings.Contains(output, "error") {
+		t.Errorf("Should show error message, got: %s", output)
 	}
 }
 
@@ -331,25 +315,12 @@ func TestRunStreamError(t *testing.T) {
 	app.client = api.NewClient(cfg)
 	app.client.SetBaseURL(server.URL)
 
-	// Capture stderr for error output
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
-	captureOutput(func() {
-		app.runStream("test query")
+	output := captureOutput(func() {
+		app.runStream(context.Background(), "test query")
 	})
 
-	w.Close()
-	os.Stderr = oldStderr
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	stderrOutput := buf.String()
-
-	// Error should be printed to stderr
-	if !strings.Contains(stderrOutput, "Error") && !strings.Contains(stderrOutput, "error") {
-		t.Errorf("Should show error message in stderr, got: %s", stderrOutput)
+	if !strings.Contains(output, "Error") && !strings.Contains(output, "error") {
+		t.Errorf("Should show error message, got: %s", output)
 	}
 }
 
@@ -381,7 +352,7 @@ func TestRunNormalNoCitations(t *testing.T) {
 	app.client.SetBaseURL(server.URL)
 
 	output := captureOutput(func() {
-		app.runNormal("test query")
+		app.runNormal(context.Background(), "test query")
 	})
 
 	if strings.Contains(output, "Sources") {
@@ -411,7 +382,7 @@ func TestRunStreamNoCitations(t *testing.T) {
 	app.client.SetBaseURL(server.URL)
 
 	output := captureOutput(func() {
-		app.runStream("test query")
+		app.runStream(context.Background(), "test query")
 	})
 
 	if strings.Contains(output, "Sources") {

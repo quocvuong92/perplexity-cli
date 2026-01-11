@@ -40,8 +40,18 @@ func showBanner(model string) {
 	fmt.Printf("        %s%s██║     ███████╗██║  ██║██║     ███████╗███████╗██╔╝ ██╗██║   ██║      ██║%s\n", colorBold, colorPurple, colorReset)
 	fmt.Printf("        %s%s╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝     ╚══════╝╚══════╝╚═╝  ╚═╝╚═╝   ╚═╝      ╚═╝%s\n", colorBold, colorPurple, colorReset)
 	fmt.Println()
-	fmt.Printf("%s                                    Model: %s%s\n", colorDim, model, colorReset)
-	fmt.Printf("%s                        Type /help for commands, Ctrl+D to quit%s\n", colorDim, colorReset)
+
+	// Tip box like Kiro (aligned with banner width - 78 chars)
+	fmt.Printf("        %s╭────────────────────────────────── Tips ───────────────────────────────────╮%s\n", colorDim, colorReset)
+	fmt.Printf("        %s│                                                                           │%s\n", colorDim, colorReset)
+	fmt.Printf("        %s│        Type /help for commands, use Ctrl+D to quit the session            │%s\n", colorDim, colorReset)
+	fmt.Printf("        %s│                End a line with \\ for multiline input                      │%s\n", colorDim, colorReset)
+	fmt.Printf("        %s│                                                                           │%s\n", colorDim, colorReset)
+	fmt.Printf("        %s╰───────────────────────────────────────────────────────────────────────────╯%s\n", colorDim, colorReset)
+	fmt.Println()
+
+	// Model info at bottom
+	fmt.Printf("%sModel: %s%s%s\n", colorDim, colorReset, model, colorReset)
 	fmt.Println()
 }
 

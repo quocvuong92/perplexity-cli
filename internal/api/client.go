@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/quocvuong92/perplexity-cli/internal/config"
+	"github.com/quocvuong92/perplexity-cli/internal/ratelimit"
 	"github.com/quocvuong92/perplexity-cli/internal/retry"
 )
 
@@ -78,6 +79,7 @@ type Client struct {
 	httpClient    *http.Client
 	config        *config.Config
 	retryConfig   retry.Config
+	rateLimiter   *ratelimit.Limiter
 	onKeyRotation func(fromIndex, toIndex int, totalKeys int) // Callback when key is rotated
 	onRetry       func(info retry.RetryInfo)                  // Callback when retrying
 }
@@ -90,6 +92,7 @@ func NewClient(cfg *config.Config) *Client {
 		},
 		config:      cfg,
 		retryConfig: retry.DefaultConfig(),
+		rateLimiter: ratelimit.NewLimiter(cfg.RateLimit),
 	}
 }
 
@@ -312,6 +315,10 @@ func (c *Client) queryWithHistoryRetry(ctx context.Context, messages []Message) 
 }
 
 func (c *Client) doQueryWithHistory(ctx context.Context, messages []Message) (*ChatResponse, error) {
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, err
+	}
+
 	reqBody := ChatRequest{
 		Model:    c.config.Model,
 		Messages: messages,
@@ -413,6 +420,10 @@ func (c *Client) queryStreamWithHistoryRetry(ctx context.Context, messages []Mes
 }
 
 func (c *Client) doQueryStreamWithHistory(ctx context.Context, messages []Message, onChunk func(content string), onDone func(resp *ChatResponse)) error {
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return err
+	}
+
 	reqBody := ChatRequest{
 		Model:    c.config.Model,
 		Messages: messages,
@@ -461,7 +472,11 @@ func (c *Client) doQueryStreamWithHistory(ctx context.Context, messages []Messag
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
 
 	var finalResp *ChatResponse
 	reader := bufio.NewReader(resp.Body)
