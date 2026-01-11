@@ -39,9 +39,10 @@ const DefaultTimeout = 120 * time.Second
 
 // Environment variable names
 const (
-	EnvAPIKeys = "PERPLEXITY_API_KEYS" // Comma-separated list of API keys
-	EnvAPIKey  = "PERPLEXITY_API_KEY"  // Single API key (fallback)
-	EnvTimeout = "PERPLEXITY_TIMEOUT"  // Timeout in seconds
+	EnvAPIKeys   = "PERPLEXITY_API_KEYS"   // Comma-separated list of API keys
+	EnvAPIKey    = "PERPLEXITY_API_KEY"    // Single API key (fallback)
+	EnvTimeout   = "PERPLEXITY_TIMEOUT"    // Timeout in seconds
+	EnvRateLimit = "PERPLEXITY_RATE_LIMIT" // Requests per minute
 )
 
 // Config holds the application configuration
@@ -53,6 +54,7 @@ type Config struct {
 	startKeyIndex   int      // Starting index for rotation cycle detection (-1 = not tracking)
 	Model           string
 	Timeout         time.Duration // HTTP client timeout
+	RateLimit       float64       // Requests per minute (0 = disabled)
 	Usage           bool
 	Citations       bool
 	Stream          bool
@@ -152,6 +154,15 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Load rate limit from environment
+	if c.RateLimit == 0 {
+		if rateLimitStr := os.Getenv(EnvRateLimit); rateLimitStr != "" {
+			if rpm, err := strconv.ParseFloat(rateLimitStr, 64); err == nil && rpm > 0 {
+				c.RateLimit = rpm
+			}
+		}
+	}
+
 	// If API key is provided via flag, use it directly (single key mode)
 	if c.APIKey != "" {
 		// Validate the API key format
@@ -181,7 +192,8 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	// Random starting key for load balancing across multiple keys
+	// Random starting key for load balancing across multiple keys.
+	// This distributes requests across keys when multiple CLI instances run concurrently.
 	c.CurrentKeyIndex = rand.IntN(len(c.APIKeys))
 	c.APIKey = c.APIKeys[c.CurrentKeyIndex]
 

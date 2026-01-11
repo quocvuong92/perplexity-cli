@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/quocvuong92/perplexity-cli/internal/api"
@@ -21,9 +22,9 @@ func TestToLower(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := toLower(tt.input)
+		got := strings.ToLower(tt.input)
 		if got != tt.want {
-			t.Errorf("toLower(%q) = %q, want %q", tt.input, got, tt.want)
+			t.Errorf("strings.ToLower(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
 }
@@ -44,9 +45,9 @@ func TestHasPrefix(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := hasPrefix(tt.s, tt.prefix)
+		got := strings.HasPrefix(tt.s, tt.prefix)
 		if got != tt.want {
-			t.Errorf("hasPrefix(%q, %q) = %v, want %v", tt.s, tt.prefix, got, tt.want)
+			t.Errorf("strings.HasPrefix(%q, %q) = %v, want %v", tt.s, tt.prefix, got, tt.want)
 		}
 	}
 }

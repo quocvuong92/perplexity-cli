@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -10,14 +11,17 @@ import (
 )
 
 // runNormal executes a single query in non-streaming mode
-func (app *App) runNormal(query string) {
+func (app *App) runNormal(ctx context.Context, query string) {
 	sp := display.NewSpinner("Waiting for response...")
 	sp.Start()
 
-	resp, err := app.client.Query(query)
+	resp, err := app.client.QueryContext(ctx, query)
 	sp.Stop()
 
 	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		msg, hint := display.FormatNetworkError(err)
 		display.ShowFriendlyError(msg, hint)
 		return
@@ -41,7 +45,7 @@ func (app *App) runNormal(query string) {
 
 	// Save to file if output flag is set
 	if app.cfg.OutputFile != "" {
-		if err := os.WriteFile(app.cfg.OutputFile, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(app.cfg.OutputFile, []byte(content), 0600); err != nil {
 			display.ShowError(fmt.Sprintf("Failed to save output: %v", err))
 		} else {
 			fmt.Fprintf(os.Stderr, "Response saved to %s\n", app.cfg.OutputFile)
@@ -50,48 +54,43 @@ func (app *App) runNormal(query string) {
 }
 
 // runStream executes a single query in streaming mode
-func (app *App) runStream(query string) {
+func (app *App) runStream(ctx context.Context, query string) {
 	var finalResp *api.ChatResponse
 	var fullContent strings.Builder
 	firstChunk := true
 
-	// Show spinner while waiting for first content
 	sp := display.NewSpinner("Waiting for response...")
 	sp.Start()
 
-	err := app.client.QueryStream(query,
+	err := app.client.QueryStreamContext(ctx, query,
 		func(content string) {
 			if firstChunk {
 				firstChunk = false
-				if app.cfg.Render {
-					// Update spinner message - keep spinning while collecting content
-					sp.UpdateMessage("Receiving response...")
-				} else {
-					// Stop spinner for non-render streaming (show content immediately)
-					sp.Stop()
-				}
+				sp.Stop()
 			}
 
 			fullContent.WriteString(content)
-			if !app.cfg.Render {
-				fmt.Print(content)
-			}
+			fmt.Print(content)
 		},
 		func(resp *api.ChatResponse) {
 			finalResp = resp
 		},
 	)
 
-	// Stop spinner (either still running in render mode, or already stopped)
 	sp.Stop()
 
 	if err != nil {
+		if ctx.Err() != nil {
+			fmt.Println()
+			return
+		}
 		msg, hint := display.FormatNetworkError(err)
 		display.ShowFriendlyError(msg, hint)
 		return
 	}
 
 	if app.cfg.Render {
+		fmt.Println("\n---")
 		// Render collected content
 		display.ShowContentRendered(fullContent.String())
 	} else {
@@ -112,7 +111,7 @@ func (app *App) runStream(query string) {
 
 	// Save to file if output flag is set
 	if app.cfg.OutputFile != "" {
-		if err := os.WriteFile(app.cfg.OutputFile, []byte(fullContent.String()), 0644); err != nil {
+		if err := os.WriteFile(app.cfg.OutputFile, []byte(fullContent.String()), 0600); err != nil {
 			display.ShowError(fmt.Sprintf("Failed to save output: %v", err))
 		} else {
 			fmt.Fprintf(os.Stderr, "Response saved to %s\n", app.cfg.OutputFile)

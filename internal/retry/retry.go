@@ -52,11 +52,10 @@ func IsRetryableError(err error) bool {
 		}
 	}
 
-	// Check for DNS errors
+	// Check for DNS errors (always retry DNS lookup failures)
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
-		// Temporary DNS errors are retryable
-		return dnsErr.Temporary()
+		return true
 	}
 
 	// Check for connection refused, reset, etc.
