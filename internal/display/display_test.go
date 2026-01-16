@@ -227,3 +227,27 @@ func TestSpinnerUpdateMessage(t *testing.T) {
 	// UpdateMessage after stop should not panic
 	sp.UpdateMessage("After stop")
 }
+
+func TestSpinnerImmediateStop(t *testing.T) {
+	// Test that Start followed immediately by Stop doesn't panic or race
+	for i := 0; i < 100; i++ {
+		sp := NewSpinner("Test")
+		sp.Start()
+		sp.Stop() // Immediate stop should not race
+	}
+}
+
+func TestSpinnerRaceCondition(t *testing.T) {
+	// Run with -race flag to detect race conditions
+	sp := NewSpinner("Test")
+
+	done := make(chan struct{})
+	go func() {
+		sp.Start()
+		close(done)
+	}()
+
+	// Try to stop while start might still be setting up
+	<-done
+	sp.Stop()
+}
