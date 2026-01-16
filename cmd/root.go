@@ -27,6 +27,7 @@ type App struct {
 	client     *api.Client
 	verbose    bool
 	listModels bool
+	noColor    bool
 }
 
 // NewApp creates a new App instance with default configuration
@@ -65,6 +66,7 @@ Output is in markdown format for easy copying.`,
 		fmt.Sprintf("Model to use. Available: %s", config.GetAvailableModelsString()))
 	rootCmd.Flags().StringVarP(&app.cfg.OutputFile, "output", "o", "", "Save response to file")
 	rootCmd.Flags().BoolVar(&app.listModels, "list-models", false, "List available models")
+	rootCmd.Flags().BoolVar(&app.noColor, "no-color", false, "Disable colored output")
 	rootCmd.Version = Version
 
 	if err := rootCmd.Execute(); err != nil {
@@ -106,7 +108,7 @@ func (app *App) run(cmd *cobra.Command, args []string) {
 
 	// Interactive mode
 	if app.cfg.Interactive {
-		app.runInteractive()
+		app.runInteractive(app.shouldUseColor())
 		return
 	}
 
@@ -179,4 +181,24 @@ func (app *App) run(cmd *cobra.Command, args []string) {
 	} else {
 		app.runNormal(ctx, query)
 	}
+}
+
+// shouldUseColor determines if colored output should be used
+func (app *App) shouldUseColor() bool {
+	// Explicit --no-color flag takes precedence
+	if app.noColor {
+		return false
+	}
+
+	// Check NO_COLOR environment variable (https://no-color.org/)
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+
+	// Check if stdout is a TTY
+	if fileInfo, _ := os.Stdout.Stat(); (fileInfo.Mode() & os.ModeCharDevice) == 0 {
+		return false
+	}
+
+	return true
 }

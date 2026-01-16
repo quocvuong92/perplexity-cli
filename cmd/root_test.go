@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"os"
 	"testing"
 
 	"github.com/quocvuong92/perplexity-cli/internal/config"
@@ -52,5 +53,36 @@ func TestAppStruct(t *testing.T) {
 	}
 	if !app.verbose {
 		t.Error("Verbose should be true")
+	}
+}
+
+func TestShouldUseColor(t *testing.T) {
+	tests := []struct {
+		name     string
+		noColor  bool
+		envSet   bool
+		expected bool
+	}{
+		{"flag set", true, false, false},
+		{"env set", false, true, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := &App{noColor: tt.noColor}
+
+			if tt.envSet {
+				os.Setenv("NO_COLOR", "1")
+				defer os.Unsetenv("NO_COLOR")
+			}
+
+			result := app.shouldUseColor()
+			if tt.noColor && result {
+				t.Error("--no-color should disable colors")
+			}
+			if tt.envSet && result {
+				t.Error("NO_COLOR env should disable colors")
+			}
+		})
 	}
 }
