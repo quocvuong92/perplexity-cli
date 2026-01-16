@@ -156,3 +156,38 @@ func TestLoggerWithGroup(t *testing.T) {
 		t.Error("WithGroup() should add group to output")
 	}
 }
+
+func TestResetForTesting(t *testing.T) {
+	// Reset to ensure clean state (in case other tests ran first)
+	ResetForTesting()
+
+	// First initialization
+	var buf1 bytes.Buffer
+	Init(Config{
+		Level:  LevelInfo,
+		Output: &buf1,
+	})
+
+	Info("message1")
+
+	// Reset and reinitialize
+	ResetForTesting()
+
+	var buf2 bytes.Buffer
+	Init(Config{
+		Level:  LevelDebug,
+		Output: &buf2,
+	})
+
+	Debug("message2")
+
+	// First buffer should have message1
+	if !strings.Contains(buf1.String(), "message1") {
+		t.Error("buf1 should contain message1")
+	}
+
+	// Second buffer should have message2
+	if !strings.Contains(buf2.String(), "message2") {
+		t.Error("buf2 should contain message2")
+	}
+}

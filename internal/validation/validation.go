@@ -18,14 +18,20 @@ var (
 
 // Limits for validation
 const (
-	// MaxPromptLength is the maximum allowed prompt length in characters
-	// Perplexity API has token limits, but we set a reasonable character limit
+	// MaxPromptLength is the maximum allowed prompt length in characters.
+	// This is a reasonable limit to prevent abuse while accommodating long prompts.
+	// Perplexity API has token limits (~127k for sonar-pro), but tokens != characters.
+	// 100k characters is approximately 25-50k tokens depending on language.
 	MaxPromptLength = 100000
 
-	// MinAPIKeyLength is the minimum expected API key length
+	// MinAPIKeyLength is the minimum expected API key length.
+	// Perplexity API keys (pplx-xxx) are typically 40+ characters.
+	// 20 is a conservative minimum to catch obvious mistakes.
 	MinAPIKeyLength = 20
 
-	// MaxAPIKeyLength is the maximum expected API key length
+	// MaxAPIKeyLength is the maximum expected API key length.
+	// Most API keys are under 100 characters. 256 provides headroom
+	// for future key format changes while catching paste errors.
 	MaxAPIKeyLength = 256
 )
 

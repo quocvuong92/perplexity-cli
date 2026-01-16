@@ -126,8 +126,14 @@ type InteractiveSession struct {
 }
 
 // runInteractive starts the interactive chat mode
-func (app *App) runInteractive() {
-	showBanner(app.cfg.Model)
+func (app *App) runInteractive(useColor bool) {
+	if useColor {
+		showBanner(app.cfg.Model)
+	} else {
+		fmt.Println("Perplexity CLI - Interactive Mode")
+		fmt.Println("Type /help for available commands, /exit to quit")
+		fmt.Println()
+	}
 
 	hist := history.NewHistory()
 	if err := hist.Load(); err != nil {

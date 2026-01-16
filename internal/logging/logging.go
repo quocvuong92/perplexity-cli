@@ -12,6 +12,7 @@ var (
 	logger     *slog.Logger
 	loggerOnce sync.Once
 	getOnce    sync.Once
+	mu         sync.Mutex // Protects reset operations
 )
 
 // Level represents the logging level
@@ -43,6 +44,8 @@ func DefaultConfig() Config {
 
 // Init initializes the global logger with the given configuration
 func Init(cfg Config) {
+	mu.Lock()
+	defer mu.Unlock()
 	loggerOnce.Do(func() {
 		level := cfg.Level
 		if cfg.Verbose {
@@ -63,8 +66,20 @@ func Init(cfg Config) {
 	})
 }
 
+// ResetForTesting resets the logger state for testing purposes.
+// This should only be used in tests, not in production code.
+func ResetForTesting() {
+	mu.Lock()
+	defer mu.Unlock()
+	logger = nil
+	loggerOnce = sync.Once{}
+	getOnce = sync.Once{}
+}
+
 // InitDiscardLogger initializes a logger that discards all output
 func InitDiscardLogger() {
+	mu.Lock()
+	defer mu.Unlock()
 	loggerOnce.Do(func() {
 		handler := slog.NewTextHandler(io.Discard, nil)
 		logger = slog.New(handler)
@@ -73,9 +88,22 @@ func InitDiscardLogger() {
 
 // Get returns the global logger, initializing with defaults if needed
 func Get() *slog.Logger {
+	mu.Lock()
+	defer mu.Unlock()
 	getOnce.Do(func() {
 		if logger == nil {
-			Init(DefaultConfig())
+			// Inline init logic to avoid deadlock (Init also locks mu)
+			cfg := DefaultConfig()
+			loggerOnce.Do(func() {
+				level := cfg.Level
+				output := cfg.Output
+				if output == nil {
+					output = io.Discard
+				}
+				opts := &slog.HandlerOptions{Level: level}
+				handler := slog.NewTextHandler(output, opts)
+				logger = slog.New(handler)
+			})
 		}
 	})
 	return logger

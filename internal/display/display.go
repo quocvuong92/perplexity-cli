@@ -44,13 +44,17 @@ func NewSpinner(message string) *Spinner {
 // Start begins the spinner animation
 func (sp *Spinner) Start() {
 	sp.mu.Lock()
+	if sp.stopped {
+		sp.mu.Unlock()
+		return
+	}
 	sp.startTime = time.Now()
+	sp.wg.Add(1) // Add to WaitGroup before starting goroutine
 	sp.mu.Unlock()
 
 	sp.s.Start()
 
 	// Update elapsed time in background
-	sp.wg.Add(1)
 	go func() {
 		defer sp.wg.Done()
 		ticker := time.NewTicker(100 * time.Millisecond)
