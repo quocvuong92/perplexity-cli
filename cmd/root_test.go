@@ -1,10 +1,16 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/quocvuong92/perplexity-cli/internal/config"
+	"github.com/quocvuong92/perplexity-cli/internal/logging"
 )
 
 func TestNewApp(t *testing.T) {
@@ -85,4 +91,61 @@ func TestShouldUseColor(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestListModelsFlag(t *testing.T) {
+	// Reset logger for clean test
+	logging.ResetForTesting()
+
+	app := NewApp()
+	app.listModels = true
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create pipe: %v", err)
+	}
+	os.Stdout = w
+
+	cmd := &cobra.Command{}
+	app.run(cmd, []string{})
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+
+	output := buf.String()
+	if !strings.Contains(output, "sonar-pro") {
+		t.Error("--list-models should show available models")
+	}
+}
+
+func TestVerboseFlag(t *testing.T) {
+	// Reset logger for clean test
+	logging.ResetForTesting()
+
+	app := NewApp()
+	app.verbose = true
+	app.listModels = true // Use list-models to avoid needing API key
+
+	cmd := &cobra.Command{}
+
+	// Capture stdout (list-models outputs there)
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create pipe: %v", err)
+	}
+	os.Stdout = w
+
+	app.run(cmd, []string{})
+
+	w.Close()
+	os.Stdout = old
+	io.Copy(io.Discard, r)
+
+	// If we get here without panic, verbose initialization worked
 }
