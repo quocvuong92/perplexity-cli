@@ -29,13 +29,20 @@ func (l *Limiter) Wait(ctx context.Context) error {
 	}
 
 	l.mu.Lock()
-	defer l.mu.Unlock()
-
 	now := time.Now()
 	elapsed := now.Sub(l.lastRequest)
+	var waitTime time.Duration
 
 	if elapsed < l.interval {
-		waitTime := l.interval - elapsed
+		waitTime = l.interval - elapsed
+	}
+
+	// Update lastRequest before releasing lock to reserve our slot
+	l.lastRequest = now.Add(waitTime)
+	l.mu.Unlock()
+
+	// Sleep outside the lock
+	if waitTime > 0 {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -43,6 +50,5 @@ func (l *Limiter) Wait(ctx context.Context) error {
 		}
 	}
 
-	l.lastRequest = time.Now()
 	return nil
 }
